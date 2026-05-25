@@ -1,0 +1,187 @@
+# docker-compose.prod.yml
+# Stack de producción cloud-agnóstico. Pensado para correr en una VM
+# (AWS Lightsail, GCE, Hetzner, DO, Linode...) con docker + docker-compose.
+#
+# Diferencias vs podman-compose.yml (dev local):
+# - LLM_PROVIDER=gemini por default (no Ollama)
+# - Logs JSON estructurados → recolectables por CloudWatch / Cloud Logging
+# - Healthchecks reforzados
+# - Volúmenes en paths estables (/var/lib/rag-sbs/...)
+# - Sin exposición pública directa de Postgres ni Redis (solo red interna)
+# - Tag de imagen versionado vía $RAG_SBS_TAG (default: latest)
+#
+# Uso:
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
+#
+# Variables críticas en .env.prod (no commitear):
+#   - GOOGLE_API_KEY=AIzaSy...
+#   - JWT_SECRET=<random>
+#   - POSTGRES_PASSWORD=<random>
+#   - OBJECT_STORE_BACKEND=s3 (o local)
+#   - OBJECT_STORE_BUCKET=rag-sbs-...
+#   - AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY
+#   - OBJECT_STORE_REGION=us-east-1
+
+version: "3.9"
+
+services:
+  # ---------------------------------------------------------------------
+  # API: FastAPI + RAG pipeline
+  # ---------------------------------------------------------------------
+  api:
+    image: ghcr.io/${GH_OWNER:-yourname}/rag-sbs-api:${RAG_SBS_TAG:-latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    container_name: rag-sbs-api
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:8000"   # solo localhost — nginx hace el reverse proxy
+    environment:
+      APP_ENV: production
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
+      DATABASE_URL: postgresql+psycopg://rag:${POSTGRES_PASSWORD}@postgres:5432/ragdb
+      REDIS_URL: redis://redis:6379/0
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      GEMINI_EMBED_MODEL: ${GEMINI_EMBED_MODEL:-gemini-embedding-001}
+      GEMINI_EMBED_DIM: ${GEMINI_EMBED_DIM:-768}
+      EMBED_DIM: ${EMBED_DIM:-768}
+      OBJECT_STORE_BACKEND: ${OBJECT_STORE_BACKEND:-local}
+      OBJECT_STORE_LOCAL_DIR: /var/lib/rag-sbs/objects
+      OBJECT_STORE_BUCKET: ${OBJECT_STORE_BUCKET:-}
+      OBJECT_STORE_REGION: ${OBJECT_STORE_REGION:-us-east-1}
+      OBJECT_STORE_ENDPOINT_URL: ${OBJECT_STORE_ENDPOINT_URL:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      JWT_SECRET: ${JWT_SECRET}
+    volumes:
+      - rag-objects:/var/lib/rag-sbs/objects
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8000/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ---------------------------------------------------------------------
+  # UI: Streamlit
+  # ---------------------------------------------------------------------
+  ui:
+    image: ghcr.io/${GH_OWNER:-yourname}/rag-sbs-ui:${RAG_SBS_TAG:-latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    container_name: rag-sbs-ui
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8501:8501"
+    environment:
+      API_URL: http://api:8000
+      API_URL_PUBLIC: ${API_URL_PUBLIC:-http://localhost:8000}
+      API_PUBLIC_PORT: ${API_PUBLIC_PORT:-8000}
+      LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+      PYTHONPATH: /app
+    command:
+      - streamlit
+      - run
+      - src/ui/streamlit_app.py
+      - --server.port=8501
+      - --server.address=0.0.0.0
+      - --server.headless=true
+      - --browser.gatherUsageStats=false
+    depends_on:
+      api:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ---------------------------------------------------------------------
+  # Postgres con pgvector
+  # ---------------------------------------------------------------------
+  postgres:
+    image: docker.io/pgvector/pgvector:pg16
+    container_name: rag-sbs-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: rag
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ragdb
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rag -d ragdb"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    # No expone puerto al exterior. Solo accesible vía red interna.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ---------------------------------------------------------------------
+  # Redis (cache semántico)
+  # ---------------------------------------------------------------------
+  redis:
+    image: docker.io/library/redis:7-alpine
+    container_name: rag-sbs-redis
+    restart: unless-stopped
+    command: ["redis-server", "--save", "60", "1", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ---------------------------------------------------------------------
+  # Nginx reverse proxy con HTTPS (Caddy alternativa más simple, ver scripts)
+  # ---------------------------------------------------------------------
+  caddy:
+    image: docker.io/library/caddy:2-alpine
+    container_name: rag-sbs-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:-_}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - api
+      - ui
+
+volumes:
+  pg-data:
+  redis-data:
+  rag-objects:
+  caddy-data:
+  caddy-config:

@@ -1,0 +1,49 @@
+# Secrets
+.env
+*.key
+*.pem
+credentials*.json
+service-account*.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.python-version
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Volumes / runtime data
+pgdata/
+data/raw/
+data/processed/
+data/embeddings/
+*.log
+
+# Vault de Obsidian (se regenera; no commitear contenido derivado masivo)
+vault/*
+!vault/.gitkeep
+
+# Notebooks output
+notebooks/.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Reports (se generan; no en repo salvo curados)
+reports/
+
+# Local-only
+docker-compose.override.yml
+podman-compose.override.yml

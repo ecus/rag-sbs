@@ -1,0 +1,34 @@
+# Configuración GitHub Pages (Jekyll)
+title: RAG SBS — Asesor Regulatorio
+description: >-
+  Sistema RAG agéntico sobre normativa de la SBS Perú con cálculos
+  deterministas, grafo de citaciones y respuestas verificables contra fuente
+  oficial.
+theme: jekyll-theme-cayman
+show_downloads: false
+google_analytics:
+remote_theme: false
+
+# Excluir archivos no relevantes del build
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - node_modules
+  - vendor
+
+# URL base — se ajusta a /rag-sbs cuando se publique como project page
+baseurl: ""
+url: ""
+
+# Navegación
+markdown: kramdown
+kramdown:
+  syntax_highlighter: rouge
+  syntax_highlighter_opts:
+    css_class: 'highlight'
+
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: default

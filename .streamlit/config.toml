@@ -1,0 +1,22 @@
+# =============================================================================
+# Streamlit theme — Identidad SBS Perú (azul institucional + rojo accent)
+# =============================================================================
+[theme]
+base = "light"
+primaryColor = "#003d7a"          # azul institucional SBS
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f5f7fa"
+textColor = "#0d1b2a"
+font = "sans serif"
+
+[server]
+headless = true
+runOnSave = false
+fileWatcherType = "none"
+
+[browser]
+gatherUsageStats = false
+
+[client]
+toolbarMode = "minimal"            # esconde el banner "Deploy" superior derecho
+showErrorDetails = true

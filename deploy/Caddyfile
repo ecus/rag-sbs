@@ -1,0 +1,57 @@
+# Caddy reverse proxy con HTTPS automático (Let's Encrypt).
+#
+# Si tienes dominio: DOMAIN=tudominio.com en .env.prod → Caddy obtiene cert
+# automáticamente.
+# Si no tienes dominio aún: DOMAIN=_ usa la IP pública con cert self-signed
+# (los navegadores van a quejarse pero sirve para demos privadas).
+
+{$DOMAIN} {
+    encode gzip
+
+    # UI Streamlit en raíz
+    handle /api/* {
+        uri strip_prefix /api
+        reverse_proxy api:8000 {
+            header_up Host {host}
+            header_up X-Real-IP {remote}
+            flush_interval -1
+        }
+    }
+
+    # API REST y stream (sin prefijo, para clientes externos)
+    handle /v1/* {
+        reverse_proxy api:8000 {
+            header_up Host {host}
+            header_up X-Real-IP {remote}
+            flush_interval -1
+        }
+    }
+
+    # /graph del API (HTML del cerebro digital)
+    handle /graph {
+        reverse_proxy api:8000
+    }
+
+    # UI Streamlit por default (WebSocket support nativo)
+    handle {
+        reverse_proxy ui:8501 {
+            header_up Host {host}
+            header_up X-Real-IP {remote}
+        }
+    }
+
+    # Headers de seguridad
+    header {
+        Strict-Transport-Security "max-age=31536000;"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "SAMEORIGIN"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+
+    # Logs estructurados
+    log {
+        output stdout
+        format json
+        level INFO
+    }
+}
