@@ -156,16 +156,38 @@ class APIClient:
     def graph_url(self, request_host: str | None = None) -> str:
         """URL pública del grafo (vista desde el navegador del usuario).
 
+        Estrategia (en orden):
+        1. Si está set ``API_URL_PUBLIC`` con esquema completo → usarla.
+        2. Si no, derivar del ``request_host`` que el browser usó para llegar
+           a Streamlit. Si el puerto es ``443`` o ``API_PUBLIC_SCHEME=https``,
+           usar HTTPS sin puerto explícito (proxy Caddy maneja).
+        3. Último recurso: ``http://localhost:8000``.
+
         Args:
-            request_host: opcional. Host que el navegador usó para llegar a Streamlit
-                (p. ej. ``192.168.0.133:8501``). Si se provee, se reusa ese hostname
-                con el puerto de la API — así la UI funciona desde cualquier máquina
-                en la LAN sin hardcodear IPs. Si no se provee, cae al env
-                ``API_URL_PUBLIC`` o, en último caso, ``localhost:8000``.
+            request_host: opcional. Host con el que el navegador llegó a la UI
+                (ej. ``3.220.87.49.nip.io`` o ``192.168.0.133:8501``).
         """
+        # Caso 1: explícita por env
+        url_explicita = os.getenv("API_URL_PUBLIC", "").strip()
+        if url_explicita and url_explicita not in ("http://_", "https://_"):
+            return url_explicita.rstrip("/") + "/graph"
+
+        # Caso 2: derivar del request del browser
         if request_host:
-            # Quitar puerto si viene incluido y usar el de la API
             host_only = request_host.split(":")[0]
             api_port = os.getenv("API_PUBLIC_PORT", "8000")
-            return f"http://{host_only}:{api_port}/graph"
-        return os.getenv("API_URL_PUBLIC", "http://localhost:8000") + "/graph"
+            scheme = os.getenv("API_PUBLIC_SCHEME", "")
+
+            if not scheme:
+                # Autodetectar HTTPS si puerto 443 o si no hay puerto en host
+                scheme = "https" if api_port in ("443", "") else "http"
+
+            # Si esquema https y puerto 443, omitir puerto explícito
+            if scheme == "https" and api_port in ("443", ""):
+                return f"https://{host_only}/graph"
+            if scheme == "http" and api_port == "80":
+                return f"http://{host_only}/graph"
+            return f"{scheme}://{host_only}:{api_port}/graph"
+
+        # Caso 3: fallback dev local
+        return "http://localhost:8000/graph"
