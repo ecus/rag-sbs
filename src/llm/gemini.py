@@ -42,19 +42,32 @@ def _delay_de_429(exc: Exception) -> float | None:
 
 
 async def _con_retry(fn, *, max_intentos: int = 4, base_delay: float = 2.0):
-    """Ejecuta ``fn`` con retry exponencial para 429 RESOURCE_EXHAUSTED."""
+    """Ejecuta ``fn`` con retry exponencial para 429 RESOURCE_EXHAUSTED.
+
+    Si detecta agotamiento del quota DIARIO (mensaje "embed_content_free_tier
+    _requests" o "RequestsPerDayPerProjectPerModel-FreeTier"), aborta sin
+    reintentar — esperar al reset diario es lo único que ayuda.
+    """
     for intento in range(max_intentos):
         try:
             return await fn()
         except genai_errors.ClientError as exc:
             if getattr(exc, "code", None) != 429:
                 raise
+            msg = str(exc)
+            # Si es quota DIARIO agotado, no hay caso reintentar
+            if "RequestsPerDay" in msg or "free_tier_requests" in msg:
+                logger.error(
+                    "Gemini quota diario agotado — abortar (espera reset 24h o "
+                    "activar Tier 1 pagado por $5)"
+                )
+                raise
             sugerido = _delay_de_429(exc)
             if sugerido is None:
                 sugerido = base_delay * (2 ** intento)
             sugerido += random.uniform(0, 1)
             logger.warning(
-                "Gemini 429 (intento %d/%d) — esperando %.1fs",
+                "Gemini 429 RPM (intento %d/%d) — esperando %.1fs",
                 intento + 1, max_intentos, sugerido,
             )
             if intento == max_intentos - 1:
@@ -223,10 +236,35 @@ class GeminiProvider(LLMProvider):
             yield c
 
     async def health(self) -> bool:
-        """Smoke test: pequeño embedding para validar credenciales."""
+        """Smoke test: NO consume quota.
+
+        Solo valida que la API key esté configurada y que el endpoint de
+        ``list_models`` responda. Importante: no hace embed ni generate
+        para evitar agotar el quota free tier (1000 emb/día).
+
+        Si el quota está agotado (429 RESOURCE_EXHAUSTED), retorna ``True``
+        igualmente porque el SERVICIO sigue alcanzable — solo el quota
+        terminará renovándose en 24h.
+        """
         try:
-            await self.embed(["health check"])
-            return True
+            import asyncio
+            loop = asyncio.get_event_loop()
+
+            def _ping() -> bool:
+                # list_models es gratis y no consume quota
+                modelos = list(self._client.models.list())
+                return len(modelos) > 0
+
+            return await loop.run_in_executor(None, _ping)
+        except genai_errors.ClientError as exc:
+            if getattr(exc, "code", None) == 429:
+                # Quota exhausted, pero servicio sigue vivo
+                logger.warning(
+                    "Gemini quota exhausted (sigue alcanzable, esperar reset diario)"
+                )
+                return True
+            logger.warning("Gemini health check falló: %s", exc)
+            return False
         except Exception as exc:  # noqa: BLE001
             logger.warning("Gemini health check falló: %s", exc)
             return False
