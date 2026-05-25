@@ -15,9 +15,9 @@ exclude:
   - node_modules
   - vendor
 
-# URL base — se ajusta a /rag-sbs cuando se publique como project page
-baseurl: ""
-url: ""
+# URL base — project page bajo /rag-sbs (no es user site)
+baseurl: "/rag-sbs"
+url: "https://ecus.github.io"
 
 # Navegación
 markdown: kramdown
