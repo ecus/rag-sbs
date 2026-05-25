@@ -659,7 +659,105 @@ with tab_stats:
 # ===========================================================================
 
 with tab_runs:
-    st.markdown("### Fuentes registradas")
+    # ----------------------------------------------------------------------
+    # Sección "Catálogo curado" — popular fuentes con un click
+    # ----------------------------------------------------------------------
+    st.markdown("### 📦 Catálogo curado de fuentes")
+    st.caption(
+        "Lista verificada de PDFs oficiales de SBS, BCRP, leyes y otras "
+        "reguladoras. Al **Popular** se registran en el scheduler y se "
+        "ingestan en el próximo scan (manual o automático diario)."
+    )
+
+    try:
+        catalog = api.get_catalog()
+        cat_stats = catalog.get("stats", {})
+        col_st1, col_st2, col_st3 = st.columns(3)
+        with col_st1:
+            st.metric("Fuentes en catálogo", cat_stats.get("total_fuentes", 0))
+        with col_st2:
+            por_iss = cat_stats.get("por_institucion", {})
+            st.metric(
+                "Instituciones",
+                len(por_iss),
+                help=", ".join(f"{k}:{v}" for k, v in por_iss.items()),
+            )
+        with col_st3:
+            por_dom = cat_stats.get("por_dominio", {})
+            st.metric("Dominios", len(por_dom))
+
+        # Tabla del catálogo
+        items = catalog.get("items", [])
+        if items:
+            df_cat = pd.DataFrame([
+                {
+                    "Institución": (it.get("metadata") or {}).get("issuer", "—"),
+                    "Tipo": it.get("document_type", "—"),
+                    "Nombre": (it.get("metadata") or {}).get("title", it["name"])[:80],
+                    "Dominio": it.get("domain", "—"),
+                    "Año": (it.get("metadata") or {}).get("year", "—"),
+                }
+                for it in items
+            ])
+            st.dataframe(df_cat, use_container_width=True, hide_index=True, height=240)
+
+        # Acciones
+        col_a, col_b, col_c = st.columns(3)
+        with col_a:
+            if st.button(
+                "🌱 Popular catálogo completo",
+                type="primary",
+                use_container_width=True,
+                help="Registra TODAS las fuentes del catálogo en doc_sources",
+            ):
+                with st.spinner("Registrando fuentes..."):
+                    try:
+                        res = api.seed_catalog()
+                        st.success(
+                            f"✓ {res.get('registradas', 0)} fuentes registradas. "
+                            "Pulsa 'Disparar scan' para ingestarlas ahora."
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        st.error(f"Error: {exc}")
+        with col_b:
+            issuer_filter = st.selectbox(
+                "Solo institución",
+                options=["(todas)"] + list((cat_stats.get("por_institucion") or {}).keys()),
+                key="seed_issuer_filter",
+            )
+            if st.button("🎯 Popular solo esta", use_container_width=True):
+                if issuer_filter == "(todas)":
+                    st.warning("Elige una institución específica primero")
+                else:
+                    with st.spinner(f"Registrando fuentes de {issuer_filter}..."):
+                        try:
+                            res = api.seed_catalog(only_issuer=issuer_filter)
+                            st.success(
+                                f"✓ {res.get('registradas', 0)} fuentes de {issuer_filter}"
+                            )
+                        except Exception as exc:  # noqa: BLE001
+                            st.error(f"Error: {exc}")
+        with col_c:
+            if st.button(
+                "⚡ Disparar scan ahora",
+                use_container_width=True,
+                help="Procesa todas las fuentes habilitadas y las ingesta.",
+            ):
+                with st.spinner("Disparando scan (~5-15 min según fuentes)..."):
+                    try:
+                        res = api.trigger_scan(force=False, dry_run=False)
+                        st.info(f"Scan en background: run_id={res.get('run_id', '?')[:8]}…")
+                    except Exception as exc:  # noqa: BLE001
+                        st.error(f"Error: {exc}")
+    except Exception as exc:  # noqa: BLE001
+        st.warning(f"No se pudo cargar el catálogo: {exc}")
+
+    st.markdown("---")
+
+    # ----------------------------------------------------------------------
+    # Sección "Fuentes registradas" (la que ya estaba)
+    # ----------------------------------------------------------------------
+    st.markdown("### 📋 Fuentes registradas en BD")
     try:
         fuentes = api.list_sources()
         if fuentes:

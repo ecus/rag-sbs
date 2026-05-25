@@ -184,6 +184,79 @@ async def delete_source(
 
 
 # ---------------------------------------------------------------------------
+# Catálogo curado y seed
+# ---------------------------------------------------------------------------
+
+@router.get("/catalog", tags=["ingest-scan"])
+async def get_catalog() -> dict:
+    """Devuelve el catálogo curado de fuentes regulatorias.
+
+    No requiere DB. Solo lee el módulo Python `seed_catalog`.
+    Útil para que la UI muestre qué fuentes hay disponibles antes
+    de popularlas.
+    """
+    from src.ingestion.seed_catalog import (
+        CATALOGO_COMPLETO,
+        stats as catalog_stats,
+    )
+    return {
+        "items": CATALOGO_COMPLETO,
+        "stats": catalog_stats(),
+    }
+
+
+@router.post("/seed", status_code=200, tags=["ingest-scan"])
+async def seed_sources(
+    request: Request,
+    background: BackgroundTasks,
+    only_issuer: str | None = None,
+    pool: AsyncConnectionPool = Depends(get_pool),
+) -> dict:
+    """Popula la tabla doc_sources con el catálogo curado.
+
+    Args:
+        only_issuer: opcional. Filtra a un issuer específico (SBS, BCRP, etc.).
+            Si no se pasa, popula TODO el catálogo.
+
+    Después llama a reload_jobs() del scheduler para que los nuevos cron jobs
+    queden registrados automáticamente.
+
+    Optional: dispara un scan inicial inmediato en background sobre las
+    fuentes recién registradas.
+    """
+    from src.ingestion.seed_catalog import CATALOGO_COMPLETO
+
+    items = CATALOGO_COMPLETO
+    if only_issuer:
+        items = [
+            f for f in items
+            if (f.get("metadata", {}).get("issuer", "").upper() == only_issuer.upper())
+        ]
+    if not items:
+        raise HTTPException(404, f"No hay fuentes para issuer={only_issuer!r}")
+
+    async with pool.connection() as conn:
+        repo = IngestionRepository(conn)
+        registradas = []
+        for fuente in items:
+            fila = await repo.upsert_source(fuente)
+            registradas.append(fila["name"])
+        await conn.commit()
+
+    # Refresh scheduler con los nuevos jobs
+    sched = getattr(request.app.state, "ingestion_scheduler", None)
+    if sched:
+        await sched.reload_jobs()
+
+    return {
+        "registradas": len(registradas),
+        "fuentes": registradas,
+        "scheduler_jobs_reloaded": bool(sched),
+        "tip": "Disparar /v1/ingest/scan para ingestar todo ahora, o esperar al cron",
+    }
+
+
+# ---------------------------------------------------------------------------
 # Change events
 # ---------------------------------------------------------------------------
 

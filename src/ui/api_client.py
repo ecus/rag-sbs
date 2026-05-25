@@ -132,6 +132,27 @@ class APIClient:
         r = self._client.get(f"{self.base_url}/v1/ingest/events", params={"limit": limit})
         return r.json()
 
+    def get_catalog(self) -> dict:
+        """Catálogo curado de fuentes regulatorias (no requiere DB)."""
+        r = self._client.get(f"{self.base_url}/v1/ingest/catalog")
+        r.raise_for_status()
+        return r.json()
+
+    def seed_catalog(self, only_issuer: str | None = None) -> dict:
+        """Pobla doc_sources con el catálogo curado.
+
+        Args:
+            only_issuer: opcional, filtra por institución (SBS, BCRP, etc.).
+        """
+        params = {"only_issuer": only_issuer} if only_issuer else {}
+        r = self._client.post(
+            f"{self.base_url}/v1/ingest/seed",
+            params=params,
+            timeout=60,
+        )
+        r.raise_for_status()
+        return r.json()
+
     def graph_url(self, request_host: str | None = None) -> str:
         """URL pública del grafo (vista desde el navegador del usuario).
 
