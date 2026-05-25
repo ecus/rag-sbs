@@ -41,10 +41,14 @@
     }
 
     # Headers de seguridad
+    # NOTA: usamos Content-Security-Policy frame-ancestors 'self' en vez de
+    # X-Frame-Options SAMEORIGIN porque Streamlit components.v1.iframe carga
+    # con sandboxing que el segundo bloquea aunque sea same-origin.
     header {
         Strict-Transport-Security "max-age=31536000;"
         X-Content-Type-Options "nosniff"
-        X-Frame-Options "SAMEORIGIN"
+        -X-Frame-Options
+        Content-Security-Policy "frame-ancestors 'self' https://*.nip.io https://3.220.87.49.nip.io;"
         Referrer-Policy "strict-origin-when-cross-origin"
     }
 

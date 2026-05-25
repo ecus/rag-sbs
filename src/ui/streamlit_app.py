@@ -603,79 +603,19 @@ with tab_ab:
 with tab_grafo:
     st.markdown("### Cerebro Digital — grafo interactivo")
     st.caption(
-        "Visualización nativa del knowledge graph extraído del corpus: "
-        "documentos, resoluciones, leyes, circulares, artículos, anexos y tópicos. "
-        "Cada arista es una citación detectada en el texto."
+        "Vista nativa del knowledge graph: documentos, resoluciones, leyes, artículos, "
+        "anexos y tópicos. Click en cualquier nodo para ver sus conexiones."
     )
-
     # Detectar el host con el que el navegador llegó a Streamlit
     try:
         request_host = st.context.headers.get("Host") or st.context.headers.get("host")
     except Exception:  # noqa: BLE001
         request_host = None
-    try:
-        grafo_url = api.graph_url(request_host=request_host)
-    except Exception:  # noqa: BLE001
-        grafo_url = "/graph"
-
-    # Streamlit + iframe + Caddy + CSP no se llevan bien.
-    # Usamos un botón grande que abre el grafo en una pestaña nueva — UX más
-    # limpia que un iframe acotado en 900px de altura.
-    col_a, col_b, col_c = st.columns([1, 2, 1])
-    with col_b:
-        st.markdown(
-            f"""
-            <div style="
-                background: linear-gradient(135deg, #003d7a 0%, #1e40af 100%);
-                color: white;
-                padding: 30px;
-                border-radius: 12px;
-                text-align: center;
-                margin-top: 20px;
-                box-shadow: 0 8px 24px rgba(0, 61, 122, 0.25);
-            ">
-                <div style="font-size: 48px; margin-bottom: 8px;">🧠</div>
-                <h3 style="color: white; margin: 0 0 12px 0;">
-                    Abrir Cerebro Digital
-                </h3>
-                <p style="margin-bottom: 20px; opacity: 0.9;">
-                    Red interactiva de citaciones entre normas regulatorias del corpus SBS.
-                </p>
-                <a href="{grafo_url}" target="_blank" rel="noopener noreferrer"
-                   style="
-                        display: inline-block;
-                        background: white;
-                        color: #003d7a;
-                        padding: 12px 28px;
-                        border-radius: 8px;
-                        text-decoration: none;
-                        font-weight: 600;
-                        font-size: 16px;
-                ">
-                    🚀 Explorar grafo navegable →
-                </a>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    # Indicadores rápidos del grafo
-    try:
-        stats_g = api.graph_stats()
-        cgs1, cgs2, cgs3, cgs4 = st.columns(4)
-        with cgs1:
-            st.metric("Nodos", stats_g.get("nodos_total", 0))
-        with cgs2:
-            st.metric("Aristas", stats_g.get("aristas_total", 0))
-        nodos_tipo = stats_g.get("nodos_por_tipo", {}) or {}
-        with cgs3:
-            st.metric("Resoluciones", nodos_tipo.get("resolution", 0))
-        with cgs4:
-            st.metric("Leyes", nodos_tipo.get("ley", 0))
-    except Exception as exc:  # noqa: BLE001
-        st.caption(f"⚠ Stats del grafo no disponibles: {exc}")
-
-    st.caption(f"URL directa: [`{grafo_url}`]({grafo_url})")
+    grafo_url = api.graph_url(request_host=request_host)
+    st.components.v1.iframe(grafo_url, height=900, scrolling=True)
+    st.caption(
+        f"También disponible directamente en [{grafo_url}]({grafo_url})"
+    )
 
 
 # ===========================================================================
