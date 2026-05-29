@@ -741,12 +741,95 @@ with tab_runs:
                 use_container_width=True,
                 help="Procesa todas las fuentes habilitadas y las ingesta.",
             ):
-                with st.spinner("Disparando scan (~5-15 min según fuentes)..."):
-                    try:
-                        res = api.trigger_scan(force=False, dry_run=False)
-                        st.info(f"Scan en background: run_id={res.get('run_id', '?')[:8]}…")
-                    except Exception as exc:  # noqa: BLE001
-                        st.error(f"Error: {exc}")
+                try:
+                    res = api.trigger_scan(force=False, dry_run=False)
+                    run_id = res.get("run_id")
+                    if run_id:
+                        st.session_state["active_scan_id"] = run_id
+                        st.session_state["active_scan_started_at"] = time.time()
+                        st.rerun()
+                except Exception as exc:  # noqa: BLE001
+                    st.error(f"Error: {exc}")
+
+    # -------------------------------------------------------------------
+    # Sección "Progreso en vivo del scan" (solo visible si hay scan corriendo)
+    # -------------------------------------------------------------------
+    active_run_id = st.session_state.get("active_scan_id")
+    if active_run_id:
+        st.markdown("---")
+        st.markdown("### 📡 Progreso del scan en curso")
+
+        # Total esperado (fuentes activas en BD)
+        try:
+            total_fuentes_activas = len([
+                f for f in api.list_sources() if f.get("enabled", True)
+            ])
+        except Exception:  # noqa: BLE001
+            total_fuentes_activas = 0
+
+        bar_placeholder = st.empty()
+        metrics_placeholder = st.empty()
+        info_placeholder = st.empty()
+
+        max_polls = 240  # ~8 minutos máximo de polling activo (2s * 240)
+        for poll_n in range(max_polls):
+            try:
+                run = api.get_run(active_run_id)
+            except Exception as exc:  # noqa: BLE001
+                info_placeholder.error(f"Error obteniendo estado: {exc}")
+                break
+
+            estado = run.get("status", "?")
+            scanned = run.get("sources_scanned", 0) or 0
+            nuevos = run.get("docs_new", 0) or 0
+            modif = run.get("docs_modified", 0) or 0
+            sin_cambios = run.get("docs_unchanged", 0) or 0
+            elapsed = int(time.time() - st.session_state.get("active_scan_started_at", time.time()))
+
+            with metrics_placeholder.container():
+                m1, m2, m3, m4, m5 = st.columns(5)
+                with m1: st.metric("Procesadas", f"{scanned}/{total_fuentes_activas or '?'}")
+                with m2: st.metric("Nuevos", nuevos)
+                with m3: st.metric("Modificados", modif)
+                with m4: st.metric("Sin cambios", sin_cambios)
+                with m5: st.metric("Tiempo", f"{elapsed}s")
+
+            if estado in ("completed", "failed"):
+                if estado == "completed":
+                    bar_placeholder.progress(1.0, text=f"✓ Completado en {elapsed}s")
+                    info_placeholder.success(
+                        f"✅ Scan finalizado · {nuevos} nuevos · {modif} modificados · "
+                        f"{sin_cambios} sin cambios"
+                    )
+                else:
+                    bar_placeholder.empty()
+                    info_placeholder.error(f"❌ Scan falló: {run.get('errors', '?')}")
+                # Limpiar estado
+                st.session_state.pop("active_scan_id", None)
+                st.session_state.pop("active_scan_started_at", None)
+                break
+
+            # Running: pintar barra
+            if total_fuentes_activas > 0:
+                pct = min(scanned / total_fuentes_activas, 0.99)
+                bar_placeholder.progress(
+                    pct,
+                    text=f"Procesando fuente {scanned} de {total_fuentes_activas}… ({int(pct*100)}%)",
+                )
+            else:
+                bar_placeholder.progress(
+                    min(scanned / max(scanned + 1, 1), 0.95),
+                    text=f"Procesando… {scanned} fuentes hasta ahora",
+                )
+            info_placeholder.caption(f"Run ID: `{active_run_id[:8]}…` · refrescando cada 2s")
+
+            time.sleep(2)
+        else:
+            # Salió por timeout del loop
+            info_placeholder.warning(
+                "⏱ Polling detenido tras 8 min. El scan puede seguir en background — "
+                "recarga la página o revisa 'Últimos runs' abajo."
+            )
     except Exception as exc:  # noqa: BLE001
         st.warning(f"No se pudo cargar el catálogo: {exc}")
 

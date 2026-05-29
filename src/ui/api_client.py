@@ -128,6 +128,12 @@ class APIClient:
         )
         return r.json()
 
+    def get_run(self, run_id: str) -> dict:
+        """Obtiene el estado actual de un run de ingesta (para polling de progreso)."""
+        r = self._client.get(f"{self.base_url}/v1/ingest/runs/{run_id}", timeout=10)
+        r.raise_for_status()
+        return r.json()
+
     def list_events(self, limit: int = 50) -> list[dict]:
         r = self._client.get(f"{self.base_url}/v1/ingest/events", params={"limit": limit})
         return r.json()
