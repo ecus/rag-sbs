@@ -57,13 +57,9 @@ async def scan(
             dry_run=payload.dry_run,
         )
 
-    # Background: ejecutar el scan completo. APScheduler también puede dispararlo
-    # según cron, pero aquí es manual on-demand.
+    # Background: ejecutar el scan completo reutilizando el run_id ya creado
+    # arriba — así el frontend hace polling del MISMO id y ve progreso real.
     async def _ejecutar_en_background() -> None:
-        # NOTA: la función run_scan crea SU PROPIO run_id. Para consistencia,
-        # llamamos a process_source manualmente. Versión MVP: dejamos run_scan
-        # crear su run y usamos el mismo state. En siguiente iteración
-        # refactorizamos para aceptar run_id externo.
         await run_scan(
             pool=pool,
             llm=llm,
@@ -71,6 +67,7 @@ async def scan(
             force=payload.force,
             dry_run=payload.dry_run,
             triggered_by="manual",
+            external_run_id=run_id,
         )
 
     background.add_task(_ejecutar_en_background)

@@ -269,15 +269,25 @@ async def run_scan(
     force: bool,
     dry_run: bool,
     triggered_by: str,
+    external_run_id: UUID | None = None,
 ) -> dict:
-    """Ejecuta un scan completo. Retorna resumen del run."""
+    """Ejecuta un scan completo. Retorna resumen del run.
+
+    Si se pasa ``external_run_id``, se reutiliza ese ID en vez de crear uno
+    nuevo. Esto permite que el endpoint /v1/ingest/scan retorne un run_id
+    ANTES de procesar, y el frontend pueda hacer polling del MISMO run_id
+    para la barra de progreso.
+    """
     async with pool.connection() as conn:
         repo = IngestionRepository(conn)
-        run_id = await repo.create_run(
-            triggered_by=triggered_by,
-            source_filter=source_filter,
-            dry_run=dry_run,
-        )
+        if external_run_id is None:
+            run_id = await repo.create_run(
+                triggered_by=triggered_by,
+                source_filter=source_filter,
+                dry_run=dry_run,
+            )
+        else:
+            run_id = external_run_id
         fuentes = await repo.list_sources(
             only_enabled=True, names=source_filter or None
         )
