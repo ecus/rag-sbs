@@ -751,8 +751,12 @@ with tab_runs:
                 except Exception as exc:  # noqa: BLE001
                     st.error(f"Error: {exc}")
 
+    except Exception as exc:  # noqa: BLE001
+        st.warning(f"No se pudo cargar el catálogo: {exc}")
+
     # -------------------------------------------------------------------
     # Sección "Progreso en vivo del scan" (solo visible si hay scan corriendo)
+    # Está FUERA del try del catálogo — necesita correr aunque el catálogo falle.
     # -------------------------------------------------------------------
     active_run_id = st.session_state.get("active_scan_id")
     if active_run_id:
@@ -784,22 +788,29 @@ with tab_runs:
             nuevos = run.get("docs_new", 0) or 0
             modif = run.get("docs_modified", 0) or 0
             sin_cambios = run.get("docs_unchanged", 0) or 0
-            elapsed = int(time.time() - st.session_state.get("active_scan_started_at", time.time()))
+            elapsed = int(
+                time.time() - st.session_state.get("active_scan_started_at", time.time())
+            )
 
             with metrics_placeholder.container():
                 m1, m2, m3, m4, m5 = st.columns(5)
-                with m1: st.metric("Procesadas", f"{scanned}/{total_fuentes_activas or '?'}")
-                with m2: st.metric("Nuevos", nuevos)
-                with m3: st.metric("Modificados", modif)
-                with m4: st.metric("Sin cambios", sin_cambios)
-                with m5: st.metric("Tiempo", f"{elapsed}s")
+                with m1:
+                    st.metric("Procesadas", f"{scanned}/{total_fuentes_activas or '?'}")
+                with m2:
+                    st.metric("Nuevos", nuevos)
+                with m3:
+                    st.metric("Modificados", modif)
+                with m4:
+                    st.metric("Sin cambios", sin_cambios)
+                with m5:
+                    st.metric("Tiempo", f"{elapsed}s")
 
             if estado in ("completed", "failed"):
                 if estado == "completed":
                     bar_placeholder.progress(1.0, text=f"✓ Completado en {elapsed}s")
                     info_placeholder.success(
-                        f"✅ Scan finalizado · {nuevos} nuevos · {modif} modificados · "
-                        f"{sin_cambios} sin cambios"
+                        f"✅ Scan finalizado · {nuevos} nuevos · "
+                        f"{modif} modificados · {sin_cambios} sin cambios"
                     )
                 else:
                     bar_placeholder.empty()
@@ -814,14 +825,17 @@ with tab_runs:
                 pct = min(scanned / total_fuentes_activas, 0.99)
                 bar_placeholder.progress(
                     pct,
-                    text=f"Procesando fuente {scanned} de {total_fuentes_activas}… ({int(pct*100)}%)",
+                    text=f"Procesando fuente {scanned} de {total_fuentes_activas}… "
+                         f"({int(pct * 100)}%)",
                 )
             else:
                 bar_placeholder.progress(
                     min(scanned / max(scanned + 1, 1), 0.95),
                     text=f"Procesando… {scanned} fuentes hasta ahora",
                 )
-            info_placeholder.caption(f"Run ID: `{active_run_id[:8]}…` · refrescando cada 2s")
+            info_placeholder.caption(
+                f"Run ID: `{active_run_id[:8]}…` · refrescando cada 2s"
+            )
 
             time.sleep(2)
         else:
@@ -830,8 +844,6 @@ with tab_runs:
                 "⏱ Polling detenido tras 8 min. El scan puede seguir en background — "
                 "recarga la página o revisa 'Últimos runs' abajo."
             )
-    except Exception as exc:  # noqa: BLE001
-        st.warning(f"No se pudo cargar el catálogo: {exc}")
 
     st.markdown("---")
 
