@@ -235,19 +235,23 @@ async def get_topics_details(
                 tamano = meta.get("tamano", 0) or 0
 
                 # 2. Top docs del tópico via aristas same_topic
+                # Columnas reales en graph_edges: src_node, dst_node, weight
+                # Las aristas same_topic van DOCUMENT → TOPIC
+                # No tenemos columna weight — usamos COUNT de aristas como proxy
                 await cur.execute(
                     """
                     SELECT
-                        d.id, d.title, ge.weight AS chunks_del_topico,
+                        d.id, d.title,
+                        COALESCE((ge.metadata->>'peso')::int, 1) AS chunks_del_topico,
                         (SELECT COUNT(*) FROM chunks WHERE document_id = d.id)
                             AS chunks_totales
                     FROM graph_edges ge
-                    JOIN graph_nodes gd ON gd.id = ge.source_id
-                    JOIN documents d ON gd.metadata->>'document_id' = d.id::text
-                       OR d.title = gd.label
-                    WHERE ge.target_id = %s
+                    JOIN graph_nodes gd ON gd.id = ge.src_node
+                    JOIN documents d ON (gd.metadata->>'document_id' = d.id::text
+                                         OR d.title = gd.label)
+                    WHERE ge.dst_node = %s
                       AND ge.relation = 'same_topic'
-                    ORDER BY ge.weight DESC NULLS LAST
+                    ORDER BY chunks_del_topico DESC NULLS LAST
                     LIMIT %s
                     """,
                     (topic_node_id, max_docs_per_topic),
