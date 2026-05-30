@@ -111,6 +111,23 @@ class APIClient:
         r = self._client.get(f"{self.base_url}/v1/graph/topics", params={"limit": limit})
         return r.json()
 
+    def graph_topics_details(
+        self,
+        sample_chunks_per_topic: int = 3,
+        max_docs_per_topic: int = 8,
+    ) -> dict:
+        """Devuelve cada tópico L2 con docs principales y chunks representativos."""
+        r = self._client.get(
+            f"{self.base_url}/v1/graph/topics/details",
+            params={
+                "sample_chunks_per_topic": sample_chunks_per_topic,
+                "max_docs_per_topic": max_docs_per_topic,
+            },
+            timeout=30,
+        )
+        r.raise_for_status()
+        return r.json()
+
     # ------ Ingest ------------------------------------------------------------
 
     def list_sources(self) -> list[dict]:

@@ -188,6 +188,105 @@ async def post_construir_topicos(
     return await descubrir_topicos(pool, llm, n_topicos=n_topicos)
 
 
+@router.get("/v1/graph/topics/details")
+async def get_topics_details(
+    sample_chunks_per_topic: int = 2,
+    max_docs_per_topic: int = 6,
+    pool: AsyncConnectionPool = Depends(get_pool),
+) -> dict:
+    """Devuelve cada tópico L2 con sus docs principales y chunks representativos.
+
+    Usa la estructura del grafo: nodos ``kind='topic'`` con aristas
+    ``relation='same_topic'`` apuntando a documentos. El metadata.indice
+    del nodo topic da el índice del cluster; el peso de la arista es el
+    número de chunks del documento que cayeron en ese tópico.
+
+    Args:
+        sample_chunks_per_topic: cuántos chunks ejemplo devolver por tópico
+        max_docs_per_topic: máximo de docs en el top
+    """
+    async with pool.connection() as conn:
+        async with conn.cursor() as cur:
+            # 1. Listar tópicos (nodos kind='topic') con su metadata
+            await cur.execute(
+                """
+                SELECT id, label, metadata
+                FROM graph_nodes
+                WHERE kind = 'topic'
+                ORDER BY (metadata->>'indice')::int NULLS LAST
+                """
+            )
+            topicos_raw = await cur.fetchall()
+
+            if not topicos_raw:
+                return {
+                    "topicos": [],
+                    "warning": (
+                        "No hay topicos construidos. POST "
+                        "/v1/graph/topics/build primero."
+                    ),
+                }
+
+            topicos = []
+            for topic_node_id, topic_label, topic_metadata in topicos_raw:
+                meta = topic_metadata or {}
+                indice = meta.get("indice")
+                snippets_repr = meta.get("snippets", []) or []
+                tamano = meta.get("tamano", 0) or 0
+
+                # 2. Top docs del tópico via aristas same_topic
+                await cur.execute(
+                    """
+                    SELECT
+                        d.id, d.title, ge.weight AS chunks_del_topico,
+                        (SELECT COUNT(*) FROM chunks WHERE document_id = d.id)
+                            AS chunks_totales
+                    FROM graph_edges ge
+                    JOIN graph_nodes gd ON gd.id = ge.source_id
+                    JOIN documents d ON gd.metadata->>'document_id' = d.id::text
+                       OR d.title = gd.label
+                    WHERE ge.target_id = %s
+                      AND ge.relation = 'same_topic'
+                    ORDER BY ge.weight DESC NULLS LAST
+                    LIMIT %s
+                    """,
+                    (topic_node_id, max_docs_per_topic),
+                )
+                docs = []
+                for did, title, ch_topico, ch_total in await cur.fetchall():
+                    docs.append({
+                        "id": str(did),
+                        "title": (title or "")[:120],
+                        "chunks_del_topico": int(ch_topico or 0),
+                        "chunks_totales": int(ch_total or 0),
+                    })
+
+                # 3. Sample chunks: usar snippets representativos del tópico
+                # (guardados al construir el tópico) — son los más cercanos
+                # al centroide del cluster.
+                samples = []
+                for snippet in snippets_repr[:sample_chunks_per_topic]:
+                    if not snippet:
+                        continue
+                    samples.append({
+                        "doc_title": "Fragmento representativo",
+                        "snippet": snippet[:400] + (
+                            "…" if len(snippet) > 400 else ""
+                        ),
+                    })
+
+                topicos.append({
+                    "indice": indice,
+                    "label": meta.get("label_llm") or topic_label or "Sin nombre",
+                    "miembros": tamano,
+                    "documentos_unicos": len(docs),
+                    "docs_top": docs,
+                    "samples": samples,
+                })
+
+    return {"topicos": topicos, "total_topicos": len(topicos)}
+
+
 # ---------------------------------------------------------------------------
 # Reclasificación de citas: cites → modifies / derogates
 # ---------------------------------------------------------------------------

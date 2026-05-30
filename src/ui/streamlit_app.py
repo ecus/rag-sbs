@@ -623,33 +623,155 @@ with tab_grafo:
 # ===========================================================================
 
 with tab_stats:
-    st.markdown("### Top entidades citadas")
+    st.markdown("### 🧭 Tópicos descubiertos en el corpus")
     st.caption(
-        "Resoluciones, leyes y circulares ordenadas por número de citaciones recibidas "
-        "desde el corpus indexado."
+        "Clusters semánticos detectados por K-means sobre los embeddings del corpus. "
+        "Cada tópico agrupa chunks por similitud temática. El nombre lo asigna un LLM "
+        "a partir de muestras representativas."
     )
-    try:
-        topicos = api.graph_topics(limit=20)
-        if topicos:
-            df = pd.DataFrame(topicos)
-            chart = (
-                alt.Chart(df)
-                .mark_bar(color="#003d7a")
-                .encode(
-                    x=alt.X("citaciones:Q", title="Citaciones recibidas"),
-                    y=alt.Y("label:N", sort="-x", title=""),
-                    tooltip=["label", "kind", "citaciones"],
-                )
-                .properties(height=520)
-            )
-            st.altair_chart(chart, use_container_width=True)
 
-            with st.expander("Ver tabla completa"):
-                st.dataframe(df, use_container_width=True, hide_index=True)
+    # ---- Cards por tópico (vista principal) ----
+    try:
+        detalle = api.graph_topics_details(
+            sample_chunks_per_topic=2, max_docs_per_topic=6
+        )
+        topicos_detallados = detalle.get("topicos", [])
+        if not topicos_detallados:
+            st.info(
+                "Aún no hay tópicos. Ve a Operación → ejecuta scan, luego en consola "
+                "POST /v1/graph/topics/build."
+            )
         else:
-            st.info("Aún no hay entidades citadas. Ejecuta `make rebuild-graph`.")
+            # Resumen
+            total_chunks_topificados = sum(t.get("miembros", 0) for t in topicos_detallados)
+            cols_s = st.columns(3)
+            with cols_s[0]:
+                st.metric("Tópicos", len(topicos_detallados))
+            with cols_s[1]:
+                st.metric("Chunks clusterizados", f"{total_chunks_topificados:,}")
+            with cols_s[2]:
+                docs_unicos_total = sum(t.get("documentos_unicos", 0) for t in topicos_detallados)
+                st.metric("Σ documentos por tópico", docs_unicos_total)
+
+            st.markdown("---")
+
+            # Render cards en grid de 2 columnas
+            paleta = [
+                "#003d7a", "#b91c1c", "#15803d", "#7c3aed",
+                "#ca8a04", "#0891b2", "#be185d", "#1e40af",
+                "#65a30d", "#9333ea",
+            ]
+            for i in range(0, len(topicos_detallados), 2):
+                col_l, col_r = st.columns(2)
+                for j, col in enumerate((col_l, col_r)):
+                    idx = i + j
+                    if idx >= len(topicos_detallados):
+                        continue
+                    t = topicos_detallados[idx]
+                    color = paleta[t.get("indice", idx) % len(paleta)]
+                    label = t.get("label", "Sin nombre")
+                    miembros = t.get("miembros", 0)
+                    docs_count = t.get("documentos_unicos", 0)
+
+                    with col:
+                        # Card header con color de tópico
+                        st.markdown(
+                            f"""
+                            <div style="
+                                background: linear-gradient(135deg, {color}dd, {color}99);
+                                color: white;
+                                padding: 14px 18px;
+                                border-radius: 8px 8px 0 0;
+                                margin-top: 8px;
+                            ">
+                                <div style="font-size: 11px; opacity: 0.85;">
+                                    TÓPICO #{t.get('indice', '?')}
+                                </div>
+                                <div style="font-size: 18px; font-weight: 600; margin-top: 2px;">
+                                    {label}
+                                </div>
+                                <div style="font-size: 12px; margin-top: 6px; opacity: 0.92;">
+                                    📊 {miembros} chunks · 📚 {docs_count} documentos
+                                </div>
+                            </div>
+                            """,
+                            unsafe_allow_html=True,
+                        )
+
+                        # Body de la card
+                        body_html_parts = [
+                            f'<div style="border: 1px solid {color}33; '
+                            f'border-top: none; padding: 14px 18px; '
+                            f'border-radius: 0 0 8px 8px; background: white;">'
+                        ]
+
+                        # Top docs
+                        docs = t.get("docs_top", [])
+                        if docs:
+                            body_html_parts.append(
+                                '<div style="font-size: 12px; font-weight: 600; '
+                                'color: #475569; margin-bottom: 6px;">📚 Documentos:</div>'
+                            )
+                            body_html_parts.append('<ul style="margin: 0 0 12px 16px; padding: 0; font-size: 13px;">')
+                            for d in docs[:5]:
+                                title = (d.get("title") or "")[:75]
+                                ch_t = d.get("chunks_del_topico", 0)
+                                body_html_parts.append(
+                                    f'<li style="margin: 2px 0;">{title} '
+                                    f'<span style="color:#94a3b8;">({ch_t} chunks)</span></li>'
+                                )
+                            body_html_parts.append('</ul>')
+
+                        # Sample chunks
+                        samples = t.get("samples", [])
+                        if samples:
+                            body_html_parts.append(
+                                '<div style="font-size: 12px; font-weight: 600; '
+                                'color: #475569; margin-bottom: 6px;">💡 Fragmento representativo:</div>'
+                            )
+                            s = samples[0]
+                            body_html_parts.append(
+                                f'<div style="background: #f8fafc; padding: 10px 12px; '
+                                f'border-left: 3px solid {color}; border-radius: 4px; '
+                                f'font-size: 12px; color: #334155; line-height: 1.5;">'
+                                f'<em>"{s.get("snippet","")}"</em><br>'
+                                f'<span style="font-size: 10px; color: #94a3b8;">'
+                                f'— {s.get("doc_title","")}</span></div>'
+                            )
+
+                        body_html_parts.append('</div>')
+                        st.markdown("".join(body_html_parts), unsafe_allow_html=True)
+
+            st.markdown("---")
     except Exception as exc:  # noqa: BLE001
-        st.error(f"No se pudo cargar tópicos: {exc}")
+        st.warning(f"No se pudo cargar dashboard de tópicos: {exc}")
+
+    # ---- Sección secundaria: entidades más citadas (la que ya teníamos) ----
+    with st.expander("📈 Top entidades más citadas (vista por nodos)", expanded=False):
+        st.caption(
+            "Resoluciones, leyes y circulares ordenadas por número de citaciones recibidas "
+            "desde el corpus indexado."
+        )
+        try:
+            topicos = api.graph_topics(limit=20)
+            if topicos:
+                df = pd.DataFrame(topicos)
+                chart = (
+                    alt.Chart(df)
+                    .mark_bar(color="#003d7a")
+                    .encode(
+                        x=alt.X("citaciones:Q", title="Citaciones recibidas"),
+                        y=alt.Y("label:N", sort="-x", title=""),
+                        tooltip=["label", "kind", "citaciones"],
+                    )
+                    .properties(height=520)
+                )
+                st.altair_chart(chart, use_container_width=True)
+                st.dataframe(df, use_container_width=True, hide_index=True)
+            else:
+                st.info("Aún no hay entidades citadas.")
+        except Exception as exc:  # noqa: BLE001
+            st.error(f"No se pudo cargar tópicos clásicos: {exc}")
 
 
 # ===========================================================================
