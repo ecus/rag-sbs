@@ -126,9 +126,11 @@ async def update_config(
 class ScrapeRequest(BaseModel):
     sbs: bool = True
     bcrp: bool = True
-    max_urls_sbs: int = 400
-    max_urls_bcrp: int = 100
+    max_urls_sbs: int = 800
+    max_urls_bcrp: int = 200
     verify_http: bool = True
+    max_candidatos_sbs: int = 30000
+    concurrencia_sbs: int = 30
 
 
 @router.post("/scrape")
@@ -141,7 +143,10 @@ async def scrape_now(
     if req.sbs:
         from src.ingestion.scrapers.sbs import descubrir_sbs
         fuentes = await descubrir_sbs(
-            max_urls=req.max_urls_sbs, verify_http=req.verify_http
+            max_urls=req.max_urls_sbs,
+            verify_http=req.verify_http,
+            max_candidatos=req.max_candidatos_sbs,
+            concurrencia=req.concurrencia_sbs,
         )
         resumen["sbs_descubiertas"] = len(fuentes)
         resumen["sbs_encoladas"] = await _insertar_descubiertas(
