@@ -77,10 +77,20 @@ class ExportResult(BaseModel):
 async def get_graph_stats(
     pool: AsyncConnectionPool = Depends(get_pool),
 ) -> GraphStats:
-    """Estadísticas globales del grafo."""
+    """Estadísticas globales del grafo.
+
+    El conteo de ``document`` se sobreescribe con la tabla ``documents``
+    para mostrar valor LIVE (sin esperar al rebuild horario del grafo).
+    """
     async with pool.connection() as conn:
         repo = GraphRepository(conn)
         stats = await repo.estadisticas()
+        # Override live: contar documentos reales en BD
+        async with conn.cursor() as cur:
+            await cur.execute("SELECT COUNT(*) FROM documents")
+            row = await cur.fetchone()
+            if row and stats.get("nodos_por_tipo") is not None:
+                stats["nodos_por_tipo"]["document"] = int(row[0])
     return GraphStats(**stats)
 
 
