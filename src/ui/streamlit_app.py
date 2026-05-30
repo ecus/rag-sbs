@@ -19,12 +19,28 @@ from src.ui.styles import (
     badge_via,
     calcular_dependencias_ui,
     inyectar_estilos,
+    panel_sin_evidencia,
     render_calculo_card,
     render_footer,
     render_fuente_card,
     render_header,
     resaltar_referencias_fuente,
 )
+
+
+def _es_respuesta_sin_evidencia(texto: str) -> bool:
+    if not texto:
+        return False
+    t = texto.lower()
+    return any(k in t for k in (
+        "no tengo evidencia",
+        "no encuentro evidencia",
+        "no hay evidencia",
+        "sin información suficiente",
+        "no dispongo de información",
+        "no se encontró información",
+        "no encontré información",
+    ))
 
 # ---------------------------------------------------------------------------
 # Setup
@@ -157,17 +173,25 @@ def _procesar_streaming(
 
         # Texto final con resaltado de [Fuente N]
         respuesta_final = "".join(texto_acumulado)
-        placeholder_texto.markdown(
-            resaltar_referencias_fuente(respuesta_final),
-            unsafe_allow_html=True,
-        )
+        sin_evidencia = _es_respuesta_sin_evidencia(respuesta_final)
+
+        if sin_evidencia:
+            # Panel prominente en lugar del texto plano + ocultar contradicciones
+            placeholder_texto.markdown(
+                panel_sin_evidencia(), unsafe_allow_html=True
+            )
+        else:
+            placeholder_texto.markdown(
+                resaltar_referencias_fuente(respuesta_final),
+                unsafe_allow_html=True,
+            )
         status.update(label="✓ Listo", state="complete", expanded=False)
 
         # Metricas top
         if metadata_final:
             cols = st.columns([1, 1, 1, 2])
             cols[0].markdown(
-                f"**Confianza:** {badge_confianza(metadata_final['confidence'])}",
+                f"**Confianza:** {badge_confianza(metadata_final['confidence'], respuesta_final)}",
                 unsafe_allow_html=True,
             )
             cols[1].caption(f"⏱ {metadata_final['latency_ms']/1000:.1f}s")
@@ -493,15 +517,21 @@ with tab_chat:
                     history=historial_backend,
                 )
                 # Respuesta con [Fuente N] resaltados en amarillo
-                placeholder.markdown(
-                    resaltar_referencias_fuente(respuesta["answer"]),
-                    unsafe_allow_html=True,
-                )
+                sin_ev = _es_respuesta_sin_evidencia(respuesta["answer"])
+                if sin_ev:
+                    placeholder.markdown(
+                        panel_sin_evidencia(), unsafe_allow_html=True
+                    )
+                else:
+                    placeholder.markdown(
+                        resaltar_referencias_fuente(respuesta["answer"]),
+                        unsafe_allow_html=True,
+                    )
 
                 # Confianza + métricas
                 cols = st.columns([1, 1, 1, 2])
                 cols[0].markdown(
-                    f"**Confianza:** {badge_confianza(respuesta['confidence'])}",
+                    f"**Confianza:** {badge_confianza(respuesta['confidence'], respuesta['answer'])}",
                     unsafe_allow_html=True,
                 )
                 cols[1].caption(f"⏱ {respuesta['latency_ms']/1000:.1f}s")

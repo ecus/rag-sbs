@@ -739,8 +739,48 @@ def badge_via(via: str) -> str:
     return f'<span class="via-vector">{via}</span>'
 
 
-def badge_confianza(nivel: str) -> str:
+def badge_confianza(nivel: str, respuesta_texto: str | None = None) -> str:
+    """Renderiza badge de confianza.
+
+    Si la respuesta indica que el modelo no tiene evidencia, sobrescribe
+    el nivel para mostrar SIN EVIDENCIA en lugar de un nivel contradictorio.
+    """
+    if respuesta_texto:
+        texto_lower = respuesta_texto.lower()
+        sin_evidencia_keywords = (
+            "no tengo evidencia",
+            "no encuentro evidencia",
+            "no hay evidencia",
+            "sin información suficiente",
+            "no dispongo de información",
+            "no se encontró información",
+            "no encontré información",
+        )
+        if any(k in texto_lower for k in sin_evidencia_keywords):
+            return (
+                '<span class="conf-badge conf-sin-evidencia" '
+                'style="background:#fef3c7;color:#92400e;'
+                'border:1px solid #fbbf24;">SIN EVIDENCIA</span>'
+            )
     return f'<span class="conf-badge conf-{nivel}">{nivel}</span>'
+
+
+def panel_sin_evidencia() -> str:
+    """Tarjeta visual prominente cuando la respuesta no tiene evidencia."""
+    return (
+        '<div style="background:linear-gradient(135deg,#fffbeb,#fef3c7);'
+        'border:1px solid #fbbf24;border-radius:12px;padding:20px;'
+        'margin:16px 0;display:flex;gap:16px;align-items:center;">'
+        '<div style="font-size:42px;">🔍</div>'
+        '<div style="flex:1;">'
+        '<div style="font-weight:700;font-size:16px;color:#92400e;'
+        'margin-bottom:6px;">No se encontró información en el corpus</div>'
+        '<div style="color:#78350f;font-size:14px;line-height:1.5;">'
+        'Esta consulta no encontró documentos relevantes en la base regulatoria. '
+        'Probá reformular la pregunta, usá términos oficiales (ej. "Resolución SBS", '
+        '"Manual de Contabilidad") o activá <b>Grafo</b> y subí <b>Saltos</b> a 2.'
+        '</div></div></div>'
+    )
 
 
 def _render_tabla_provision_html(
@@ -1226,7 +1266,15 @@ def render_fuente_card(numero: int, fuente: dict) -> str:
         else "via-both-card" if via == "both"
         else ""
     )
-    titulo = _html.escape(fuente.get("title", ""))[:120]
+    # Limpiar título: quitar extensión .pdf, prefijos técnicos
+    titulo_raw = fuente.get("title", "")
+    titulo_raw = _re.sub(r"\.pdf$", "", titulo_raw, flags=_re.IGNORECASE)
+    titulo_raw = _re.sub(r"^(Res-?SBS-?|res-sbs-)", "Resolución SBS ", titulo_raw, flags=_re.IGNORECASE)
+    titulo_raw = titulo_raw.replace("-", " ").replace("_", " ").strip()
+    # Capitalizar mejor si vino en minúsculas separadas
+    if titulo_raw and titulo_raw == titulo_raw.lower():
+        titulo_raw = titulo_raw.title()
+    titulo = _html.escape(titulo_raw)[:120]
     section = fuente.get("section_path")
     if section and section not in ("(sin estructura)", "(preámbulo)"):
         section_html = f'<span class="fuente-section">{_html.escape(section)}</span>'
@@ -1284,15 +1332,26 @@ def render_fuente_card(numero: int, fuente: dict) -> str:
             f'</div></details>'
         )
 
+    # Versión amigable: solo título + sección + link PDF
+    # Detalles técnicos (vía retrieval, score) van en <details> opcional
+    detalles_tecnicos = (
+        f'<details class="fuente-tecnico" style="margin-top:4px;">'
+        f'<summary style="font-size:10px;color:#94a3b8;cursor:pointer;">'
+        f'Detalles técnicos</summary>'
+        f'<div style="font-size:11px;color:#64748b;padding:6px 0;">'
+        f'{via_badge}<span class="score-chip">relevancia {score:.2f}</span>'
+        f'</div></details>'
+    )
+
     return (
         f'<div class="fuente-wrapper">'
         f'<div class="fuente-card {clase_via}">'
         f'<div class="fuente-num"><small>FUENTE</small>{numero}</div>'
         f'<div class="fuente-body">'
         f'<div class="fuente-titulo">{issuer_badge}{titulo}</div>'
-        f'<div class="fuente-meta">{section_html}{via_badge}'
-        f'<span class="score-chip">score {score:.2f}</span>{enlace_html}'
-        f'</div></div></div>'
+        f'<div class="fuente-meta">{section_html}{enlace_html}</div>'
+        f'{detalles_tecnicos}'
+        f'</div></div>'
         f'{snippet_html}'
         f'</div>'
     )
