@@ -111,6 +111,12 @@ class APIClient:
         r = self._client.get(f"{self.base_url}/v1/graph/topics", params={"limit": limit})
         return r.json()
 
+    def stats_by_issuer(self) -> dict:
+        """Breakdown del corpus por institución emisora (SBS, BCRP, etc.)."""
+        r = self._client.get(f"{self.base_url}/v1/stats/by-issuer", timeout=15)
+        r.raise_for_status()
+        return r.json()
+
     def graph_topics_details(
         self,
         sample_chunks_per_topic: int = 3,

@@ -239,6 +239,49 @@ with st.sidebar:
     except Exception:  # noqa: BLE001
         st.info("Esperando datos del grafo…")
 
+    # Breakdown por institución emisora
+    try:
+        by_issuer = api.stats_by_issuer()
+        items = by_issuer.get("por_issuer", [])
+        if items:
+            st.markdown("### Por institución")
+            # Paleta de colores institucional
+            colores_inst = {
+                "SBS": "#003d7a",      # azul SBS
+                "BCRP": "#b91c1c",     # rojo BCRP
+                "Congreso": "#7c3aed", # morado Congreso
+                "MEF": "#15803d",
+                "SMV": "#0891b2",
+                "INDECOPI": "#ca8a04",
+                "SUNAT": "#be185d",
+                "(s/d)": "#64748b",
+            }
+            for it in items:
+                issuer = it.get("issuer", "?")
+                docs = it.get("docs", 0)
+                chunks = it.get("chunks", 0)
+                color = colores_inst.get(issuer, "#475569")
+                st.markdown(
+                    f"""
+                    <div style="
+                        background: {color}11;
+                        border-left: 3px solid {color};
+                        padding: 6px 10px;
+                        border-radius: 4px;
+                        margin-bottom: 4px;
+                        font-size: 12px;
+                    ">
+                        <strong style="color: {color};">{issuer}</strong>
+                        <span style="float: right; color: #64748b;">
+                            {docs} docs · {chunks} chunks
+                        </span>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+    except Exception:  # noqa: BLE001
+        pass
+
     st.markdown("### Acciones")
     if st.button("Disparar scan", use_container_width=True):
         with st.spinner("Disparando scan..."):
@@ -247,9 +290,9 @@ with st.sidebar:
 
     st.markdown("---")
     st.caption(
-        "**RAG SBS** v0.2 · Portafolio personal\n\n"
-        "Datos: corpus público SBS Perú\n\n"
-        "Stack: FastAPI · pgvector · Ollama · NetworkX"
+        "**RAG SBS** v0.3 · Portafolio personal\n\n"
+        "Datos: corpus público SBS Perú + BCRP + Leyes Congreso\n\n"
+        "Stack: FastAPI · pgvector · Gemini 2.5 Flash · NetworkX"
     )
 
 

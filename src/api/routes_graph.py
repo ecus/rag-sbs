@@ -188,6 +188,55 @@ async def post_construir_topicos(
     return await descubrir_topicos(pool, llm, n_topicos=n_topicos)
 
 
+@router.get("/v1/stats/by-issuer")
+async def get_stats_by_issuer(
+    pool: AsyncConnectionPool = Depends(get_pool),
+) -> dict:
+    """Breakdown del corpus por institución emisora (SBS, BCRP, Congreso, etc.).
+
+    Retorna por cada issuer: docs, chunks, top documentos por chunks.
+    """
+    async with pool.connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT
+                  COALESCE(metadata->>'issuer', '(s/d)') AS issuer,
+                  COUNT(*) AS docs,
+                  SUM((SELECT COUNT(*) FROM chunks WHERE document_id=d.id))::int AS chunks
+                FROM documents d
+                GROUP BY 1
+                ORDER BY docs DESC
+                """
+            )
+            por_issuer = []
+            for issuer, docs_count, chunks_count in await cur.fetchall():
+                # Top 3 docs por chunks de este issuer
+                await cur.execute(
+                    """
+                    SELECT d.title,
+                           (SELECT COUNT(*) FROM chunks WHERE document_id=d.id)::int AS ch
+                    FROM documents d
+                    WHERE COALESCE(d.metadata->>'issuer', '(s/d)') = %s
+                    ORDER BY ch DESC
+                    LIMIT 3
+                    """,
+                    (issuer,),
+                )
+                top_docs = [
+                    {"title": (t or "")[:80], "chunks": ch}
+                    for t, ch in await cur.fetchall()
+                ]
+                por_issuer.append({
+                    "issuer": issuer,
+                    "docs": int(docs_count or 0),
+                    "chunks": int(chunks_count or 0),
+                    "top_docs": top_docs,
+                })
+
+    return {"por_issuer": por_issuer, "total_issuers": len(por_issuer)}
+
+
 @router.get("/v1/graph/topics/details")
 async def get_topics_details(
     sample_chunks_per_topic: int = 2,
