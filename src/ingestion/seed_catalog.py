@@ -494,6 +494,63 @@ SBS = [
             "issuer": "SBS",
         },
     },
+    # ===== Expansión 2026-05 (lote 3) =====
+    {
+        "name": "res-sbs-877-2020-mod-riesgo-operacional",
+        "url": "https://intranet2.sbs.gob.pe/dv_int_cn/1894/v2.0/Adjuntos/877-2020.R.pdf",
+        "source_type": "direct_pdf",
+        "domain": "riesgo_operacional",
+        "document_type": "resolucion",
+        "cron_expr": "5 6 * * *",
+        "metadata": {
+            "title": "Modifica Reglamento Riesgo Operacional 2116-2009",
+            "resolution_number": "877-2020",
+            "year": 2020,
+            "issuer": "SBS",
+        },
+    },
+    {
+        "name": "circ-sbs-g-139-2009-continuidad-negocio",
+        "url": "https://www.sbs.gob.pe/Portals/0/jer/Auto_Nuevas_Empresas/Normas_Comunes/10.%20Gesti%C3%B3n%20de%20la%20Continuidad%20de%20Negocios_Circ.%20SBS%20G-139-2009.pdf",
+        "source_type": "direct_pdf",
+        "domain": "riesgo_operacional",
+        "document_type": "circular",
+        "cron_expr": "10 6 * * *",
+        "metadata": {
+            "title": "Circular SBS G-139-2009 — Gestión de Continuidad del Negocio",
+            "resolution_number": "G-139-2009",
+            "year": 2009,
+            "issuer": "SBS",
+        },
+    },
+    {
+        "name": "res-sbs-2660-2015-plaft-v2",
+        "url": "https://intranet2.sbs.gob.pe/dv_int_cn/1540/v2.0/Adjuntos/2660-2015.r.pdf",
+        "source_type": "direct_pdf",
+        "domain": "laft",
+        "document_type": "resolucion",
+        "cron_expr": "15 6 * * *",
+        "metadata": {
+            "title": "Reglamento Gestión Riesgos LAFT (versión 2015, predecesora 789-2018)",
+            "resolution_number": "2660-2015",
+            "year": 2015,
+            "issuer": "SBS",
+        },
+    },
+    {
+        "name": "res-sbs-3201-2013-apertura-sucursales",
+        "url": "https://intranet2.sbs.gob.pe/intranet/INT_CN/DV_INT_CN/885/v2.0/Adjuntos/3201-2013.r.pdf",
+        "source_type": "direct_pdf",
+        "domain": "operaciones_estructuradas",
+        "document_type": "resolucion",
+        "cron_expr": "20 6 * * *",
+        "metadata": {
+            "title": "Reglamento Apertura, Conversión, Traslado y Cierre de Oficinas",
+            "resolution_number": "3201-2013",
+            "year": 2013,
+            "issuer": "SBS",
+        },
+    },
 ]
 
 
