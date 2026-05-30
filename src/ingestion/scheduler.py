@@ -85,6 +85,22 @@ class IngestionScheduler:
             )
         except Exception:
             logger.exception("Falló rebuild del grafo")
+            return
+
+        # Tras rebuild, los nodos topic se borran en truncate_all → re-descubrir.
+        try:
+            from src.graph.topics import descubrir_topicos
+            n_topicos = max(8, min(20, res.get("documentos_procesados", 0) // 20))
+            topics_res = await descubrir_topicos(
+                self.pool, self.llm, n_topicos=n_topicos
+            )
+            logger.info(
+                "Topics rebuild: %d clusters sobre %d chunks",
+                topics_res.get("n_topicos", 0),
+                topics_res.get("chunks_clusterizados", 0),
+            )
+        except Exception:
+            logger.exception("Falló descubrir_topicos tras rebuild")
 
     async def shutdown(self) -> None:
         if self.scheduler.running:
