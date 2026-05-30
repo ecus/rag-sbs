@@ -30,6 +30,7 @@ class RetrievedChunk:
     text_score: float = 0.0     # ts_rank
     page: int | None = None
     metadata: dict = field(default_factory=dict)   # section_path, structural_level, etc.
+    document_issuer: str | None = None  # SBS / BCRP / Congreso / etc.
 
 
 class PgVectorStore:
@@ -183,7 +184,8 @@ class PgVectorStore:
         sql_vec = f"""
             SELECT c.id, c.document_id, c.content, c.metadata,
                    1 - (c.embedding <=> %s::vector) AS vector_score,
-                   d.title, d.source_url, d.id AS doc_uuid
+                   d.title, d.source_url, d.id AS doc_uuid,
+                   COALESCE(d.metadata->>'issuer', '(s/d)') AS doc_issuer
             FROM chunks c
             JOIN documents d ON d.id = c.document_id
             {clausula_where}
@@ -199,7 +201,8 @@ class PgVectorStore:
         sql_texto = f"""
             SELECT c.id, c.document_id, c.content, c.metadata,
                    ts_rank(c.content_tsv, plainto_tsquery('spanish', %s)) AS text_score,
-                   d.title, d.source_url, d.id AS doc_uuid
+                   d.title, d.source_url, d.id AS doc_uuid,
+                   COALESCE(d.metadata->>'issuer', '(s/d)') AS doc_issuer
             FROM chunks c
             JOIN documents d ON d.id = c.document_id
             {clausula_where + (' AND ' if clausula_where else 'WHERE ')}
@@ -256,6 +259,7 @@ class PgVectorStore:
                 vector_score=item["vector_score"],
                 text_score=item["text_score"],
                 metadata=item["fila"].get("metadata") or {},
+                document_issuer=item["fila"].get("doc_issuer"),
             )
             for item in rankeados
         ]

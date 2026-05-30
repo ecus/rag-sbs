@@ -717,6 +717,30 @@ with tab_stats:
                     docs_count = t.get("documentos_unicos", 0)
 
                     with col:
+                        # Badges institucionales en el header (Mejora #1)
+                        colores_inst = {
+                            "SBS": "#003d7a", "BCRP": "#b91c1c",
+                            "Congreso": "#7c3aed", "MEF": "#15803d",
+                            "SMV": "#0891b2", "INDECOPI": "#ca8a04",
+                            "SUNAT": "#be185d", "(s/d)": "#94a3b8",
+                        }
+                        por_iss = t.get("por_issuer", []) or []
+                        badges_html = ""
+                        for it_iss in por_iss[:5]:
+                            iss_name = it_iss.get("issuer", "?")
+                            iss_docs = it_iss.get("docs", 0)
+                            if iss_name in ("(s/d)", "", None):
+                                continue
+                            iss_color = colores_inst.get(iss_name, "#475569")
+                            badges_html += (
+                                f'<span style="background:rgba(255,255,255,0.25);'
+                                f'border:1px solid rgba(255,255,255,0.4);'
+                                f'color:#fff;padding:2px 8px;border-radius:10px;'
+                                f'font-size:10px;font-weight:600;margin-right:4px;'
+                                f'letter-spacing:0.3px;">'
+                                f'{iss_name} · {iss_docs}</span>'
+                            )
+
                         # Card header con color de tópico
                         st.markdown(
                             f"""
@@ -736,6 +760,7 @@ with tab_stats:
                                 <div style="font-size: 12px; margin-top: 6px; opacity: 0.92;">
                                     📊 {miembros} chunks · 📚 {docs_count} documentos
                                 </div>
+                                <div style="margin-top: 8px;">{badges_html}</div>
                             </div>
                             """,
                             unsafe_allow_html=True,

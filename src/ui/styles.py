@@ -1241,6 +1241,28 @@ def render_fuente_card(numero: int, fuente: dict) -> str:
     }
     via_badge = via_badge_map.get(via, "")
 
+    # Badge institucional (Mejora #3)
+    issuer = fuente.get("issuer") or ""
+    issuer_colores = {
+        "SBS": "#003d7a",
+        "BCRP": "#b91c1c",
+        "Congreso": "#7c3aed",
+        "MEF": "#15803d",
+        "SMV": "#0891b2",
+        "INDECOPI": "#ca8a04",
+        "SUNAT": "#be185d",
+    }
+    if issuer and issuer != "(s/d)":
+        color_iss = issuer_colores.get(issuer, "#475569")
+        issuer_badge = (
+            f'<span style="background:{color_iss};color:#fff;'
+            f'padding:2px 8px;border-radius:10px;font-size:10px;'
+            f'font-weight:600;letter-spacing:0.3px;margin-right:4px;">'
+            f'{_html.escape(issuer)}</span>'
+        )
+    else:
+        issuer_badge = ""
+
     url = fuente.get("url")
     enlace_html = (
         f'<a href="{_html.escape(url)}" target="_blank" style="font-size:10px;'
@@ -1267,7 +1289,7 @@ def render_fuente_card(numero: int, fuente: dict) -> str:
         f'<div class="fuente-card {clase_via}">'
         f'<div class="fuente-num"><small>FUENTE</small>{numero}</div>'
         f'<div class="fuente-body">'
-        f'<div class="fuente-titulo">{titulo}</div>'
+        f'<div class="fuente-titulo">{issuer_badge}{titulo}</div>'
         f'<div class="fuente-meta">{section_html}{via_badge}'
         f'<span class="score-chip">score {score:.2f}</span>{enlace_html}'
         f'</div></div></div>'

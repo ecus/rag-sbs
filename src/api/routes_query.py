@@ -399,6 +399,7 @@ async def query(
                 via=via,  # type: ignore[arg-type]
                 section_path=(frag.metadata or {}).get("section_path"),
                 content_snippet=snippet,
+                issuer=getattr(frag, "document_issuer", None),
             )
         )
 
@@ -625,6 +626,7 @@ async def query_stream(
                     "via": via,
                     "section_path": (frag.metadata or {}).get("section_path"),
                     "content_snippet": snippet,
+                    "issuer": getattr(frag, "document_issuer", None),
                 })
             yield _sse("sources", fuentes_data)
 

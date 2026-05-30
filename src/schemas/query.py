@@ -60,6 +60,7 @@ class Source(BaseModel):
     via: Literal["vector", "graph_expansion", "both"] = "vector"
     section_path: str | None = None     # "Capítulo VII > Artículo 45" si chunker estructural
     content_snippet: str | None = None  # texto exacto del chunk citado (~500 chars)
+    issuer: str | None = None           # SBS / BCRP / Congreso / MEF / SMV / INDECOPI / SUNAT
 
 
 class QueryResponse(BaseModel):

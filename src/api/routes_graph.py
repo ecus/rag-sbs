@@ -314,9 +314,7 @@ async def get_topics_details(
                         "chunks_totales": int(ch_total or 0),
                     })
 
-                # 3. Sample chunks: usar snippets representativos del tópico
-                # (guardados al construir el tópico) — son los más cercanos
-                # al centroide del cluster.
+                # 3. Sample chunks
                 samples = []
                 for snippet in snippets_repr[:sample_chunks_per_topic]:
                     if not snippet:
@@ -328,6 +326,29 @@ async def get_topics_details(
                         ),
                     })
 
+                # 4. Breakdown por institución (Mejora #1)
+                # Para cada tópico, cuántos documentos pertenecen a cada issuer
+                await cur.execute(
+                    """
+                    SELECT
+                      COALESCE(d.metadata->>'issuer', '(s/d)') AS issuer,
+                      COUNT(DISTINCT d.id) AS docs_count
+                    FROM graph_edges ge
+                    JOIN graph_nodes gd ON gd.id = ge.src_node
+                    JOIN documents d ON (gd.metadata->>'document_id' = d.id::text
+                                         OR d.title = gd.label)
+                    WHERE ge.dst_node = %s
+                      AND ge.relation = 'same_topic'
+                    GROUP BY issuer
+                    ORDER BY docs_count DESC
+                    """,
+                    (topic_node_id,),
+                )
+                por_issuer = [
+                    {"issuer": iss, "docs": int(cnt or 0)}
+                    for iss, cnt in await cur.fetchall()
+                ]
+
                 topicos.append({
                     "indice": indice,
                     "label": meta.get("label_llm") or topic_label or "Sin nombre",
@@ -335,6 +356,7 @@ async def get_topics_details(
                     "documentos_unicos": len(docs),
                     "docs_top": docs,
                     "samples": samples,
+                    "por_issuer": por_issuer,
                 })
 
     return {"topicos": topicos, "total_topicos": len(topicos)}
@@ -408,6 +430,7 @@ async def get_graph_data(
                 """
                 SELECT n.id, n.kind, n.label, n.document_id,
                        d.title AS doc_title,
+                       COALESCE(d.metadata->>'issuer', '(s/d)') AS issuer,
                        (SELECT COUNT(*) FROM graph_edges WHERE dst_node = n.id) AS in_deg,
                        (SELECT COUNT(*) FROM graph_edges WHERE src_node = n.id) AS out_deg
                 FROM graph_nodes n
@@ -434,46 +457,64 @@ async def get_graph_data(
             )
             filas_aristas = await cursor.fetchall()
 
+    # Paleta de colores por institución emisora (Mejora #2)
+    COLORES_ISSUER = {
+        "SBS": "#003d7a",        # azul institucional SBS
+        "BCRP": "#b91c1c",       # rojo BCRP
+        "Congreso": "#7c3aed",   # morado leyes
+        "MEF": "#15803d",        # verde MEF
+        "SMV": "#0891b2",        # cyan
+        "INDECOPI": "#ca8a04",   # ámbar
+        "SUNAT": "#be185d",      # rosa
+        "(s/d)": "#94a3b8",      # gris cuando falta
+    }
+
     # Map de nid → grado (para luego calcular longitudes de aristas)
     grados: dict[str, int] = {}
     nodos = []
-    for nid, kind, label, doc_id, doc_title, in_deg, out_deg in filas_nodos:
+    for nid, kind, label, doc_id, doc_title, issuer, in_deg, out_deg in filas_nodos:
         grado = (in_deg or 0) + (out_deg or 0)
         grados[str(nid)] = grado
         # tamaño según grado (escala log para que no domine el más conectado)
         tamano = 10 + min(grado * 1.5, 40)
 
         # Masa: hubs son más pesados → actúan como anclas; las hojas orbitan
-        # Escala suave 1.0 (hoja) → 4.0 (hub muy grande)
         masa = 1.0 + min(grado / 8.0, 3.0)
 
-        # Label visible: para documentos usamos el título (acortado),
-        # no el UUID de Postgres
+        # Label visible: para documentos usamos el título (acortado)
         if kind == "document" and doc_title:
             etiqueta_visible = doc_title if len(doc_title) <= 50 else doc_title[:47] + "…"
         else:
             etiqueta_visible = label
 
-        # Tooltip: texto plano con saltos de línea (vis-network 9 escapa HTML)
+        # Tooltip incluye issuer
         partes_tooltip = [
             etiqueta_visible,
             f"tipo: {kind}",
+            f"institución: {issuer or '?'}",
             f"conexiones: in={in_deg or 0}  out={out_deg or 0}",
         ]
         if doc_title and kind != "document":
             partes_tooltip.append(f"doc: {doc_title}")
         tooltip = "\n".join(partes_tooltip)
 
+        # Color: para documentos usar institución; para otros tipos el color por tipo
+        if kind == "document":
+            color = COLORES_ISSUER.get(issuer or "(s/d)", "#94a3b8")
+        else:
+            color = COLORES_NODO.get(kind, "#cbd5e1")
+
         nodos.append({
             "id": str(nid),
             "label": etiqueta_visible,
             "title": tooltip,
-            "color": COLORES_NODO.get(kind, "#cbd5e1"),
+            "color": color,
             "shape": "dot" if kind != "document" else "diamond",
             "size": tamano,
             "mass": round(masa, 2),
             "kind": kind,
-            "grado": grado,                # útil en JS para recalcular longitudes
+            "issuer": issuer or "(s/d)",
+            "grado": grado,
             "doc_title": doc_title or label,
             "doc_id": str(doc_id) if doc_id else None,
         })
@@ -886,9 +927,20 @@ PAGINA_GRAFO_HTML = """<!DOCTYPE html>
         es una cita detectada en el texto del corpus. El tamaño del nodo crece con su
         número de conexiones.
       </p>
-      <h2>Tipo de nodo</h2>
+      <h2>Documento por institución</h2>
+      <p style="font-size: 11px; color: var(--fg-muted); margin: 0 0 6px 0;">
+        Los nodos de documento (rombos) se colorean según la entidad emisora.
+      </p>
       <div class="leyenda">
-        <span><span class="dot" style="background:#003d7a"></span>Documento</span>
+        <span><span class="dot" style="background:#003d7a"></span>SBS</span>
+        <span><span class="dot" style="background:#b91c1c"></span>BCRP</span>
+        <span><span class="dot" style="background:#7c3aed"></span>Congreso</span>
+        <span><span class="dot" style="background:#15803d"></span>MEF</span>
+        <span><span class="dot" style="background:#0891b2"></span>SMV</span>
+        <span><span class="dot" style="background:#ca8a04"></span>INDECOPI</span>
+      </div>
+      <h2>Tipo de nodo (entidades citadas)</h2>
+      <div class="leyenda">
         <span><span class="dot" style="background:#0073cf"></span>Resolución</span>
         <span><span class="dot" style="background:#059669"></span>Ley</span>
         <span><span class="dot" style="background:#d97706"></span>Circular</span>
