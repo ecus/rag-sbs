@@ -848,6 +848,108 @@ with tab_stats:
 
 with tab_runs:
     # ----------------------------------------------------------------------
+    # Sección "Tarea de fondo" — ingesta automática con caps
+    # ----------------------------------------------------------------------
+    st.markdown("### 🤖 Tarea de ingesta en background")
+    st.caption(
+        "Worker autónomo que descubre PDFs en portales oficiales (SBS, BCRP) "
+        "y los ingesta respetando topes de costo y plazo. Cron cada 10 min."
+    )
+    try:
+        bg = api._get("/v1/background/status")
+        bg_cfg = bg.get("config", {})
+        bg_est = bg.get("estado", {})
+        today = bg_est.get("today", {})
+        total = bg_est.get("total", {})
+        queue = bg_est.get("queue", {})
+
+        cap_cost_total = float(bg_cfg.get("max_cost_total", 9.5) or 9.5)
+        cap_cost_daily = float(bg_cfg.get("max_cost_daily", 1.5) or 1.5)
+        cap_docs_total = int(bg_cfg.get("max_docs_total", 2000) or 2000)
+        enabled = bool(bg_cfg.get("enabled", True))
+        plazo = bg_cfg.get("schedule_until", "—")
+
+        b1, b2, b3, b4 = st.columns(4)
+        with b1:
+            st.metric(
+                "Estado",
+                "🟢 Activo" if enabled else "⏸️ Pausado",
+                help=f"Plazo: {plazo}",
+            )
+        with b2:
+            cost_total = float(total.get("cost", 0))
+            st.metric(
+                "Costo total",
+                f"${cost_total:.4f}",
+                delta=f"de ${cap_cost_total:.2f}",
+            )
+            st.progress(min(1.0, cost_total / cap_cost_total))
+        with b3:
+            cost_today = float(today.get("cost", 0))
+            st.metric(
+                "Costo hoy",
+                f"${cost_today:.4f}",
+                delta=f"de ${cap_cost_daily:.2f}",
+            )
+            st.progress(min(1.0, cost_today / cap_cost_daily))
+        with b4:
+            docs_total = int(total.get("docs", 0))
+            st.metric(
+                "Docs procesados",
+                docs_total,
+                delta=f"de {cap_docs_total}",
+            )
+            st.progress(min(1.0, docs_total / max(1, cap_docs_total)))
+
+        q1, q2, q3 = st.columns(3)
+        with q1:
+            st.metric("Cola pending", queue.get("pending", 0))
+        with q2:
+            st.metric("Completados", queue.get("completed", 0))
+        with q3:
+            st.metric("Fallidos", queue.get("failed", 0))
+
+        ba, bb, bc, bd = st.columns(4)
+        with ba:
+            if st.button(
+                "⏸️ Pausar" if enabled else "▶️ Activar",
+                use_container_width=True,
+            ):
+                try:
+                    api._post("/v1/background/pause" if enabled else "/v1/background/start")
+                    st.rerun()
+                except Exception as exc:  # noqa: BLE001
+                    st.error(f"{exc}")
+        with bb:
+            if st.button("🔍 Descubrir URLs", use_container_width=True,
+                         help="Corre scrapers SBS+BCRP y encola hallazgos"):
+                with st.spinner("Descubriendo... (puede tardar ~1min)"):
+                    try:
+                        res = api._post("/v1/background/scrape", json={
+                            "sbs": True, "bcrp": True,
+                            "max_urls_sbs": 400, "max_urls_bcrp": 100,
+                        })
+                        st.success(f"Encoladas: {res.get('resumen')}")
+                    except Exception as exc:  # noqa: BLE001
+                        st.error(f"{exc}")
+        with bc:
+            if st.button("⚡ Tick ahora", use_container_width=True,
+                         help="Ejecuta una iteración inmediata del worker"):
+                with st.spinner("Procesando tick..."):
+                    try:
+                        res = api._post("/v1/background/tick")
+                        st.success(f"action={res.get('action')} reason={res.get('reason', '—')}")
+                    except Exception as exc:  # noqa: BLE001
+                        st.error(f"{exc}")
+        with bd:
+            if st.button("🔄 Refrescar", use_container_width=True):
+                st.rerun()
+    except Exception as exc:  # noqa: BLE001
+        st.warning(f"Worker no disponible: {exc}")
+
+    st.markdown("---")
+
+    # ----------------------------------------------------------------------
     # Sección "Catálogo curado" — popular fuentes con un click
     # ----------------------------------------------------------------------
     st.markdown("### 📦 Catálogo curado de fuentes")

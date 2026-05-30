@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from src import __version__
 from src.api import (
+    routes_background,
     routes_graph,
     routes_health,
     routes_ingest,
@@ -47,6 +48,7 @@ def create_app() -> FastAPI:
     app.include_router(routes_ingest.router)
     app.include_router(routes_ingest_scan.router)
     app.include_router(routes_graph.router)
+    app.include_router(routes_background.router)
 
     return app
 

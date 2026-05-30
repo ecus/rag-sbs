@@ -17,6 +17,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from psycopg_pool import AsyncConnectionPool
 
+from src.ingestion.background_worker import tick as background_tick
 from src.ingestion.pipeline import run_scan
 from src.ingestion.repository import IngestionRepository
 from src.llm import LLMProvider
@@ -34,8 +35,29 @@ class IngestionScheduler:
 
     async def start(self) -> None:
         await self.reload_jobs()
+        self._registrar_background_worker()
         self.scheduler.start()
         logger.info("IngestionScheduler started with %d jobs", len(self.scheduler.get_jobs()))
+
+    def _registrar_background_worker(self) -> None:
+        """Job dedicado: tick del worker de ingesta automática cada 10 min."""
+        self.scheduler.add_job(
+            self._tick_background,
+            trigger=CronTrigger.from_crontab("*/10 * * * *", timezone="UTC"),
+            id="background:tick",
+            name="background ingestion tick",
+            replace_existing=True,
+            misfire_grace_time=600,
+            coalesce=True,
+            max_instances=1,
+        )
+
+    async def _tick_background(self) -> None:
+        try:
+            res = await background_tick(pool=self.pool, llm=self.llm)
+            logger.info("Background tick: %s", res.get("action"))
+        except Exception:
+            logger.exception("Falló tick del background worker")
 
     async def shutdown(self) -> None:
         if self.scheduler.running:

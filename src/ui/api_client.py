@@ -15,6 +15,18 @@ class APIClient:
         self.base_url = (base_url or os.getenv("API_URL", "http://api:8000")).rstrip("/")
         self._client = httpx.Client(timeout=timeout_sec)
 
+    # ------ Genéricos ---------------------------------------------------------
+
+    def _get(self, path: str) -> dict:
+        r = self._client.get(f"{self.base_url}{path}")
+        r.raise_for_status()
+        return r.json()
+
+    def _post(self, path: str, *, json: dict | None = None) -> dict:
+        r = self._client.post(f"{self.base_url}{path}", json=json or {})
+        r.raise_for_status()
+        return r.json()
+
     # ------ Health & meta -----------------------------------------------------
 
     def health(self) -> dict:
