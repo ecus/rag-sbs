@@ -164,6 +164,38 @@ async def scrape_now(
     return {"ok": True, "resumen": resumen}
 
 
+class ScrapeHtmlRequest(BaseModel):
+    portales: list[str] | None = None  # None = todos
+    max_urls_por_portal: int = 200
+    verify_http: bool = True
+    concurrencia: int = 20
+
+
+@router.post("/scrape-html")
+async def scrape_html(
+    req: ScrapeHtmlRequest,
+    pool: AsyncConnectionPool = Depends(get_pool),
+) -> dict:
+    """Scrapea portales regulatorios via HTML (SBS, MEF, SMV, Congreso)."""
+    from src.ingestion.scrapers.html_scraper import descubrir_html
+    resultado_por_portal = await descubrir_html(
+        max_urls_por_portal=req.max_urls_por_portal,
+        verify_http=req.verify_http,
+        concurrencia=req.concurrencia,
+        portales=req.portales,
+    )
+    resumen: dict[str, dict[str, int]] = {}
+    for issuer, fuentes in resultado_por_portal.items():
+        encoladas = await _insertar_descubiertas(
+            pool, fuentes, discovered_by=f"html_scraper:{issuer.lower()}"
+        )
+        resumen[issuer] = {
+            "descubiertas": len(fuentes),
+            "encoladas": encoladas,
+        }
+    return {"ok": True, "resumen": resumen}
+
+
 @router.post("/tick")
 async def tick_now(
     pool: AsyncConnectionPool = Depends(get_pool),
