@@ -17,6 +17,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from psycopg_pool import AsyncConnectionPool
 
+from src.graph.builder import reconstruir_completo
 from src.ingestion.background_worker import tick as background_tick
 from src.ingestion.pipeline import run_scan
 from src.ingestion.repository import IngestionRepository
@@ -36,6 +37,7 @@ class IngestionScheduler:
     async def start(self) -> None:
         await self.reload_jobs()
         self._registrar_background_worker()
+        self._registrar_graph_rebuild()
         self.scheduler.start()
         logger.info("IngestionScheduler started with %d jobs", len(self.scheduler.get_jobs()))
 
@@ -58,6 +60,31 @@ class IngestionScheduler:
             logger.info("Background tick: %s", res.get("action"))
         except Exception:
             logger.exception("Falló tick del background worker")
+
+    def _registrar_graph_rebuild(self) -> None:
+        """Reconstruye el knowledge graph al inicio de cada hora."""
+        self.scheduler.add_job(
+            self._rebuild_grafo,
+            trigger=CronTrigger.from_crontab("5 * * * *", timezone="UTC"),
+            id="graph:rebuild",
+            name="rebuild knowledge graph",
+            replace_existing=True,
+            misfire_grace_time=1800,
+            coalesce=True,
+            max_instances=1,
+        )
+
+    async def _rebuild_grafo(self) -> None:
+        try:
+            res = await reconstruir_completo(self.pool)
+            logger.info(
+                "Graph rebuild: %d docs, %d ops nodo, %d ops arista",
+                res.get("documentos_procesados", 0),
+                res.get("operaciones_nodo", 0),
+                res.get("operaciones_arista", 0),
+            )
+        except Exception:
+            logger.exception("Falló rebuild del grafo")
 
     async def shutdown(self) -> None:
         if self.scheduler.running:
