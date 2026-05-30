@@ -295,9 +295,8 @@ async def get_topics_details(
                         (SELECT COUNT(*) FROM chunks WHERE document_id = d.id)
                             AS chunks_totales
                     FROM graph_edges ge
-                    JOIN graph_nodes gd ON gd.id = ge.src_node
-                    JOIN documents d ON (gd.metadata->>'document_id' = d.id::text
-                                         OR d.title = gd.label)
+                    JOIN graph_nodes gd ON gd.id = ge.src_node AND gd.kind = 'document'
+                    JOIN documents d ON d.id = gd.document_id
                     WHERE ge.dst_node = %s
                       AND ge.relation = 'same_topic'
                     ORDER BY chunks_del_topico DESC NULLS LAST
@@ -334,9 +333,8 @@ async def get_topics_details(
                       COALESCE(d.metadata->>'issuer', '(s/d)') AS issuer,
                       COUNT(DISTINCT d.id) AS docs_count
                     FROM graph_edges ge
-                    JOIN graph_nodes gd ON gd.id = ge.src_node
-                    JOIN documents d ON (gd.metadata->>'document_id' = d.id::text
-                                         OR d.title = gd.label)
+                    JOIN graph_nodes gd ON gd.id = ge.src_node AND gd.kind = 'document'
+                    JOIN documents d ON d.id = gd.document_id
                     WHERE ge.dst_node = %s
                       AND ge.relation = 'same_topic'
                     GROUP BY issuer
