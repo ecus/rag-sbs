@@ -255,7 +255,7 @@ async def tick(
                     run_id=run_id,
                 )
 
-            chunks_count = getattr(resultado, "chunks", 0) or 0
+            chunks_count = getattr(resultado, "chunks_indexed", 0) or 0
             cost = _calcular_costo(chunks_count)
 
             async with pool.connection() as conn:
