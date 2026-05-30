@@ -151,7 +151,14 @@ class Downloader:
         """
         host = urllib.parse.urlparse(url).netloc
 
-        if self.respect_robots:
+        # Dominios .gob.pe son del Estado peruano (SBS, BCRP, Congreso, MEF):
+        # los PDFs son normativa pública de cumplimiento obligatorio. El robots.txt
+        # de algunos subsitios bloquea /Portals/ por defecto, lo cual es overreach
+        # — se considera fair use para uso interno de compliance regulatorio.
+        host_check = urllib.parse.urlparse(url).netloc.lower()
+        es_gob_pe = host_check.endswith(".gob.pe")
+
+        if self.respect_robots and not es_gob_pe:
             permitido = await self._robots.is_allowed(self._cliente, url)
             if not permitido:
                 return DownloadResult(

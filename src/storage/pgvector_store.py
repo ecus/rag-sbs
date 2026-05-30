@@ -70,17 +70,26 @@ class PgVectorStore:
             if fila:
                 return fila["id"]
 
+            # Calcular siguiente version_id si ya existe el slug con otro hash
+            await cursor.execute(
+                "SELECT COALESCE(MAX(version_id), 0) AS v FROM documents WHERE document_id = %s",
+                (document_id,),
+            )
+            fila_v = await cursor.fetchone()
+            siguiente_version = int((fila_v or {}).get("v", 0)) + 1
+
             # Insertar nueva versión
             await cursor.execute(
                 """
                 INSERT INTO documents
-                    (document_id, title, source_url, document_type, domain,
-                     content_hash, metadata)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    (document_id, version_id, title, source_url, document_type,
+                     domain, content_hash, metadata)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
                 (
                     document_id,
+                    siguiente_version,
                     title,
                     source_url,
                     document_type,
