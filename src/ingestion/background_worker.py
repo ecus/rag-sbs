@@ -237,8 +237,13 @@ async def tick(
                 })
 
             from src.ingestion.downloader import Downloader
-            from uuid import uuid4
-            run_id = uuid4()
+            async with pool.connection() as conn:
+                repo_run = IngestionRepository(conn)
+                run_id = await repo_run.create_run(
+                    triggered_by="background_worker",
+                    source_filter=[fuente["name"]],
+                    dry_run=False,
+                )
             async with Downloader() as descargador:
                 resultado = await process_source(
                     fuente,
