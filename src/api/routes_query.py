@@ -326,7 +326,7 @@ async def query(
         # darle más material al reranker. Si rerank=false usamos top 7 directo.
         candidatos, vias_candidatos = fusionar_y_rankear(
             fragmentos_vec, fragmentos_exp,
-            top_k_final=12 if payload.options.rerank_enabled else 7,
+            top_k_final=18 if payload.options.rerank_enabled else 7,
         )
         fragmentos, vias_por_fragmento = candidatos, vias_candidatos
     else:
@@ -609,7 +609,7 @@ async def query_stream(
                 )
                 fragmentos, vias_por_fragmento = fusionar_y_rankear(
                     fragmentos_vec, fragmentos_exp,
-                    top_k_final=12 if payload.options.rerank_enabled else 7,
+                    top_k_final=18 if payload.options.rerank_enabled else 7,
                 )
                 if telemetria_grafo:
                     yield _sse("graph", telemetria_grafo)

@@ -31,17 +31,37 @@ logger = logging.getLogger(__name__)
 
 
 PROMPT_RERANK = """\
-Eres un experto en análisis de relevancia documental sobre normativa SBS Perú.
+Eres un experto en análisis de relevancia documental sobre normativa peruana
+(SBS, BCRP, Congreso, MEF, SMV, SUNAT, INDECOPI). Tu tarea: asignar a cada
+fragmento un score 0.0–10.0 según qué tan directamente responde la CONSULTA.
 
-Te paso una CONSULTA y N FRAGMENTOS numerados. Tu tarea: asignar a cada fragmento
-un score de relevancia entre 0.0 (irrelevante) y 10.0 (responde directamente la
-consulta).
+CRITERIOS DE DISCRIMINACIÓN ESTRICTOS:
 
-CRITERIOS:
-- Score alto (8-10): el fragmento contiene la respuesta o gran parte de ella.
-- Score medio (4-7): el fragmento aporta contexto útil pero no responde directo.
-- Score bajo (0-3): el fragmento NO está relacionado con la consulta o solo la
-  toca tangencialmente.
+[10.0] Fragmento contiene la respuesta literal o el cálculo exacto que pide
+       la consulta. Menciona explícitamente la entidad clave (número de
+       resolución/artículo/cuenta, % de provisión, fórmula, dinámica).
+
+[8-9]  Fragmento describe la regla aplicable al caso. Menciona el tema
+       específico (no solo el dominio general) y permite responder con cita.
+
+[5-7]  Fragmento relacionado al dominio pero NO al caso específico. Útil
+       como contexto secundario; no como cita principal.
+
+[2-4]  Fragmento del mismo cuerpo normativo pero de un capítulo/artículo
+       distinto al que aplica a la consulta. NO usar como respuesta.
+
+[0-1]  Fragmento totalmente fuera de tema. Es ruido del retrieval.
+
+REGLAS:
+1. **Match de entidades**: si la consulta menciona "Resolución SBS 11356-2008"
+   y el fragmento es de Resolución 14354-2009, score ≤ 3 (norma distinta).
+2. **Match de cuenta contable**: si la consulta pregunta por una cuenta del
+   Manual de Contabilidad y el fragmento describe esa cuenta exacta, score
+   ≥ 9. Si describe otra cuenta del mismo Catálogo, score ≤ 5.
+3. **Match temático**: provisión ≠ patrimonio efectivo ≠ riesgo de mercado.
+   Aunque sean del mismo libro/resolución, conceptos distintos = score bajo.
+4. **No premies repetición**: si dos fragmentos dicen lo mismo, score similar
+   alto solo al más específico.
 
 OUTPUT (estricto JSON, sin texto adicional):
 [{{"id": 1, "score": 8.5}}, {{"id": 2, "score": 4.0}}, ...]
@@ -156,13 +176,22 @@ async def rerank(
     for chunk, sc in zip(chunks, scores):
         chunk.score = round(sc / 10.0, 4)
 
+    # Detectar si el rerank cambió el orden vs. el orden original
+    orden_original_ids = [c.chunk_id for c in chunks]
     chunks_ordenados = sorted(chunks, key=lambda c: c.score, reverse=True)[:top_k]
+    nuevo_orden_ids = [c.chunk_id for c in chunks_ordenados]
+    cambios = sum(
+        1
+        for i, cid in enumerate(nuevo_orden_ids)
+        if i < len(orden_original_ids) and cid != orden_original_ids[i]
+    )
     if chunks_ordenados:
         logger.info(
-            "LLM rerank OK: top score=%.2f, último=%.2f, sobre %d candidatos",
+            "LLM rerank OK: %d/%d candidatos cambiaron de orden, "
+            "top score=%.2f, último=%.2f",
+            cambios, len(chunks),
             chunks_ordenados[0].score,
             chunks_ordenados[-1].score,
-            len(chunks),
         )
     return chunks_ordenados
 
