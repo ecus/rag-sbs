@@ -708,13 +708,10 @@ hr { margin: 1.5rem 0 !important; border-color: var(--sbs-border) !important; }
 CHAT_CSS = """
 <style>
 /* === Chat estilo conversación moderna === */
-/* Soporta múltiples versiones de Streamlit: usa el atributo
-   data-testid="chatAvatarIcon-{role}" o el SVG del avatar interno. */
+/* Usa CSS :has() — soportado en Chrome/Safari/Firefox modernos */
 
-/* Selector amplio: cualquier mensaje del USUARIO */
-.stChatMessage:has(span[data-testid*="chatAvatarIcon-user"]),
-.stChatMessage:has(div[data-testid*="chatAvatarIcon-user"]),
-div[data-testid="stChatMessage"]:has(*[data-testid*="user"]) {
+/* USUARIO: derecha, burbuja azul SBS */
+div[data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-user"]) {
   flex-direction: row-reverse !important;
   background: transparent !important;
   margin-left: auto !important;
@@ -722,98 +719,31 @@ div[data-testid="stChatMessage"]:has(*[data-testid*="user"]) {
   max-width: 85% !important;
   padding: 4px 0 !important;
 }
-
-/* Contenedor de contenido del usuario → estilo burbuja azul */
-.stChatMessage:has(span[data-testid*="chatAvatarIcon-user"]) > div:last-child,
-.stChatMessage:has(div[data-testid*="chatAvatarIcon-user"]) > div:last-child,
-div[data-testid="stChatMessage"]:has(*[data-testid*="user"]) > div:last-child {
+div[data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-user"]) > div:last-child {
   background: linear-gradient(135deg, #003d7a 0%, #0656a5 100%) !important;
   color: white !important;
   padding: 12px 18px !important;
   border-radius: 18px 18px 4px 18px !important;
   box-shadow: 0 2px 6px rgba(0,61,122,0.20) !important;
 }
-.stChatMessage:has(*[data-testid*="user"]) > div:last-child p,
-.stChatMessage:has(*[data-testid*="user"]) > div:last-child span,
-.stChatMessage:has(*[data-testid*="user"]) > div:last-child * {
+div[data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-user"]) > div:last-child * {
   color: white !important;
 }
 
-/* Mensaje del ASISTENTE: izquierda, fondo gris claro */
-.stChatMessage:has(span[data-testid*="chatAvatarIcon-assistant"]),
-.stChatMessage:has(div[data-testid*="chatAvatarIcon-assistant"]),
-div[data-testid="stChatMessage"]:has(*[data-testid*="assistant"]) {
+/* ASISTENTE: izquierda, fondo gris claro */
+div[data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-assistant"]) {
   background: transparent !important;
   margin-right: auto !important;
   max-width: 90% !important;
   padding: 4px 0 !important;
 }
-
-.stChatMessage:has(*[data-testid*="assistant"]) > div:last-child {
+div[data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-assistant"]) > div:last-child {
   background: #f8fafc !important;
   border: 1px solid #e2e8f0 !important;
   padding: 14px 18px !important;
   border-radius: 4px 18px 18px 18px !important;
   box-shadow: 0 1px 3px rgba(15,23,42,0.05) !important;
 }
-
-/* Clases que un script JS añade dinámicamente como fallback */
-.chat-bubble-user {
-  margin-left: auto !important;
-  margin-right: 0 !important;
-  max-width: 85% !important;
-  flex-direction: row-reverse !important;
-}
-.chat-bubble-user > div:last-child {
-  background: linear-gradient(135deg, #003d7a 0%, #0656a5 100%) !important;
-  color: white !important;
-  padding: 12px 18px !important;
-  border-radius: 18px 18px 4px 18px !important;
-  box-shadow: 0 2px 6px rgba(0,61,122,0.20) !important;
-}
-.chat-bubble-user > div:last-child * { color: white !important; }
-.chat-bubble-assistant {
-  margin-right: auto !important;
-  max-width: 90% !important;
-}
-.chat-bubble-assistant > div:last-child {
-  background: #f8fafc !important;
-  border: 1px solid #e2e8f0 !important;
-  padding: 14px 18px !important;
-  border-radius: 4px 18px 18px 18px !important;
-}
-</style>
-
-<script>
-// Etiqueta cada chat_message con clase según rol, examinando data-testid del avatar.
-(function() {
-  function applyClasses() {
-    const root = window.parent ? window.parent.document : document;
-    const msgs = root.querySelectorAll('[data-testid="stChatMessage"]');
-    msgs.forEach(m => {
-      if (m.classList.contains('chat-bubble-user') ||
-          m.classList.contains('chat-bubble-assistant')) return;
-      const avUser = m.querySelector('[data-testid*="user"], [data-testid*="User"]');
-      const avAsis = m.querySelector('[data-testid*="assistant"], [data-testid*="Assistant"]');
-      if (avUser) m.classList.add('chat-bubble-user');
-      else if (avAsis) m.classList.add('chat-bubble-assistant');
-      else {
-        // Fallback: si el avatar tiene un <span> con icono "user", marcarlo
-        const html = m.innerHTML || '';
-        if (html.includes('user') || html.includes('User')) {
-          m.classList.add('chat-bubble-user');
-        } else {
-          m.classList.add('chat-bubble-assistant');
-        }
-      }
-    });
-  }
-  applyClasses();
-  // Observer para mensajes streamlit añadidos dinámicamente
-  const obs = new MutationObserver(applyClasses);
-  obs.observe((window.parent || window).document.body, {childList: true, subtree: true});
-})();
-</script>
 
 /* Input fijo al fondo con sombra suave */
 [data-testid="stChatInput"] {
@@ -830,14 +760,12 @@ div[data-testid="stChatMessage"]:has(*[data-testid*="assistant"]) {
   border-radius: 24px !important;
   border: 1.5px solid #cbd5e1 !important;
   box-shadow: 0 2px 12px rgba(15,23,42,0.08) !important;
-  transition: border-color 0.2s, box-shadow 0.2s;
 }
 [data-testid="stChatInput"] > div:focus-within {
   border-color: #003d7a !important;
   box-shadow: 0 2px 16px rgba(0,61,122,0.15) !important;
 }
 
-/* Botón de envío más prominente */
 [data-testid="stChatInputSubmitButton"] {
   background: #003d7a !important;
   color: white !important;
@@ -847,7 +775,6 @@ div[data-testid="stChatMessage"]:has(*[data-testid*="assistant"]) {
   background: #0656a5 !important;
 }
 
-/* Más espacio entre turns */
 [data-testid="stChatMessage"] {
   margin-bottom: 18px !important;
   padding: 0 !important;
