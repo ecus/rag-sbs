@@ -29,17 +29,28 @@ from src.ui.styles import (
 
 
 def _es_respuesta_sin_evidencia(texto: str) -> bool:
+    """Detecta NIVEL A estricto: el LLM no encontró nada en el corpus.
+
+    Si la respuesta empieza con 'Encontré información relacionada' (NIVEL B,
+    clarificación), NO la consideramos sin evidencia — dejamos que el texto
+    natural del LLM aparezca tal cual.
+    """
     if not texto:
         return False
-    t = texto.lower()
+    t = texto.strip().lower()
+    # NIVEL B (clarificación) → no es "sin evidencia"
+    if t.startswith("encontré información") or t.startswith("encontre información"):
+        return False
+    if "¿podría especificar" in t or "¿podria especificar" in t:
+        return False
+    # NIVEL A estricto
     return any(k in t for k in (
-        "no tengo evidencia",
+        "no tengo evidencia suficiente",
         "no encuentro evidencia",
         "no hay evidencia",
         "sin información suficiente",
         "no dispongo de información",
         "no se encontró información",
-        "no encontré información",
     ))
 
 # ---------------------------------------------------------------------------
