@@ -757,6 +757,33 @@ async def query_stream(
                 "latency_ms": round(latencia_ms, 2),
                 "answer_length": len(respuesta_final),
             })
+
+            # Log a query_log si vino con alias (no-bloqueante)
+            if payload.alias:
+                try:
+                    from src.storage import query_log as _qlog
+                    await _qlog.log_query(
+                        pool=pool,
+                        alias=payload.alias.strip(),
+                        query_text=payload.query,
+                        answer_text=respuesta_final,
+                        confidence=confianza,
+                        n_sources=len(fragmentos),
+                        latency_ms=int(latencia_ms),
+                        options=payload.options.model_dump(),
+                        sources_summary=[
+                            {
+                                "issuer": getattr(f, "document_issuer", None),
+                                "title": (f.document_title or "")[:120],
+                                "score": float(f.score),
+                                "doc_id": str(f.document_id),
+                            }
+                            for f in fragmentos[:8]
+                        ],
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
+
             yield _sse("done", {})
         except Exception as exc:  # noqa: BLE001
             yield _sse("error", {"message": str(exc), "type": type(exc).__name__})
