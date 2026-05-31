@@ -36,6 +36,7 @@ RUN pip install --upgrade pip && \
         "sqlalchemy>=2.0.35" "psycopg[binary,pool]>=3.2.3" "psycopg-pool>=3.2.0" "pgvector>=0.3.6" "alembic>=1.13.0" \
         "httpx>=0.27.0" "tenacity>=9.0.0" \
         "pymupdf>=1.24.0" "pypdf>=5.0.0" "tiktoken>=0.8.0" \
+        "pytesseract>=0.3.10" "Pillow>=10.0.0" \
         "redis>=5.1.0" "structlog>=24.4.0" \
         "apscheduler>=3.10.4" \
         "numpy>=1.26.0" "scikit-learn>=1.5.0" \
@@ -49,9 +50,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/opt/venv/bin:$PATH"
 
-# Solo libs runtime necesarias
+# Solo libs runtime necesarias + Tesseract OCR para PDFs escaneados
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    tesseract-ocr \
+    tesseract-ocr-spa \
     && rm -rf /var/lib/apt/lists/*
 
 # Copiar venv del builder

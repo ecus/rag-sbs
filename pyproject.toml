@@ -30,6 +30,8 @@ dependencies = [
     # RAG
     "pymupdf>=1.24.0",                   # Parser principal (preserva tablas, mejor layout)
     "pypdf>=5.0.0",                      # Fallback parser
+    "pytesseract>=0.3.10",               # OCR fallback para PDFs escaneados
+    "Pillow>=10.0.0",                    # PIL para render de páginas a imagen
 
     # Cloud LLM providers
     "google-genai>=1.0.0",               # SDK oficial Google AI Studio (Gemini API)

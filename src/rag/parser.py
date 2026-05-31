@@ -22,7 +22,61 @@ try:
 except ImportError:  # pragma: no cover
     _HAS_PYMUPDF = False
 
+try:
+    import pytesseract  # type: ignore
+    from PIL import Image  # type: ignore
+    _HAS_OCR = True
+except ImportError:  # pragma: no cover
+    _HAS_OCR = False
+
 from pypdf import PdfReader
+
+# Umbral debajo del cual consideramos que el PDF es escaneado / sin texto
+_UMBRAL_TEXTO_MIN_PROMEDIO = 50  # chars promedio por página
+_OCR_MAX_PAGINAS = 30            # cap defensivo para no quemar CPU en PDFs gigantes
+_OCR_DPI = 200                   # balance calidad/velocidad
+
+
+def _es_pdf_escaneado(texto_extraido: str, n_paginas: int) -> bool:
+    """Heurística: muy poco texto en muchas páginas → escaneado."""
+    if n_paginas == 0:
+        return False
+    promedio = len(texto_extraido.strip()) / n_paginas
+    return promedio < _UMBRAL_TEXTO_MIN_PROMEDIO and n_paginas >= 1
+
+
+def _ocr_pdf_pymupdf(content: bytes) -> str:
+    """OCR de cada página renderizando a PNG y pasando por Tesseract (spa)."""
+    if not (_HAS_OCR and _HAS_PYMUPDF):
+        return ""
+    doc = fitz.open(stream=content, filetype="pdf")
+    try:
+        textos = []
+        for i, pagina in enumerate(doc):
+            if i >= _OCR_MAX_PAGINAS:
+                logger.warning(
+                    "OCR truncado a %d páginas (PDF tenía %d)",
+                    _OCR_MAX_PAGINAS, doc.page_count,
+                )
+                break
+            try:
+                # Renderizar página a pixmap → PIL → tesseract
+                pix = pagina.get_pixmap(dpi=_OCR_DPI, alpha=False)
+                img_bytes = pix.tobytes("png")
+                from io import BytesIO as _BIO
+                img = Image.open(_BIO(img_bytes))
+                txt = pytesseract.image_to_string(img, lang="spa")
+                textos.append(txt or "")
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("OCR falló en página %d: %s", i, exc)
+                textos.append("")
+        logger.info(
+            "OCR completado: %d páginas, %d chars totales",
+            len(textos), sum(len(t) for t in textos),
+        )
+        return "\n\n".join(textos)
+    finally:
+        doc.close()
 
 
 def _parse_pdf_pymupdf(content: bytes) -> str:
@@ -57,17 +111,48 @@ def _parse_pdf_pypdf(content: bytes) -> str:
 
 
 def parse_pdf(content: bytes) -> str:
-    """Extrae texto de un PDF en bytes.
+    """Extrae texto de un PDF.
 
-    Usa PyMuPDF si está disponible; cae a pypdf en caso contrario o si
-    PyMuPDF lanza una excepción.
+    Cadena de extracción:
+    1. PyMuPDF (mejor preserva tablas y estructura)
+    2. pypdf (fallback puro Python)
+    3. OCR Tesseract en español (si los 2 anteriores extraen muy poco texto,
+       PDF probablemente escaneado)
     """
+    texto = ""
+    n_paginas = 0
     if _HAS_PYMUPDF:
         try:
-            return _parse_pdf_pymupdf(content)
+            texto = _parse_pdf_pymupdf(content)
+            # Contar páginas para heurística
+            try:
+                doc = fitz.open(stream=content, filetype="pdf")
+                n_paginas = doc.page_count
+                doc.close()
+            except Exception:  # noqa: BLE001
+                pass
         except Exception as exc:  # noqa: BLE001
             logger.warning("PyMuPDF falló (%s), fallback a pypdf", exc)
-    return _parse_pdf_pypdf(content)
+
+    if not texto.strip():
+        texto = _parse_pdf_pypdf(content)
+        if not n_paginas:
+            try:
+                n_paginas = len(PdfReader(BytesIO(content)).pages)
+            except Exception:  # noqa: BLE001
+                n_paginas = 1
+
+    # Fallback OCR si extracción nativa devuelve casi nada
+    if _es_pdf_escaneado(texto, n_paginas):
+        logger.info(
+            "PDF detectado como escaneado (%.1f chars/pág en %d pág) → OCR",
+            len(texto.strip()) / max(1, n_paginas), n_paginas,
+        )
+        texto_ocr = _ocr_pdf_pymupdf(content)
+        if len(texto_ocr.strip()) > len(texto.strip()):
+            return texto_ocr
+
+    return texto
 
 
 def parse_text(content: bytes, encoding: str = "utf-8") -> str:
