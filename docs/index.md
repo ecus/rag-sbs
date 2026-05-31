@@ -1,11 +1,15 @@
 ---
-title: RAG SBS — Asesor Regulatorio
-description: Sistema RAG sobre normativa de la SBS Perú
+title: RAG SBS — Mesa Experta Regulatoria
+description: Sistema RAG agéntico sobre normativa financiera peruana (9 instituciones)
 ---
 
-# RAG SBS — Mesa Experta Regulatoria
+# RAG SBS — Mesa Experta Regulatoria · v0.4
 
-> Sistema **RAG agéntico** sobre normativa de la **Superintendencia de Banca, Seguros y AFP del Perú** (SBS) y el **Banco Central de Reserva** (BCRP). Responde consultas técnicas con cálculos deterministas, citación de fuente oficial verificable y un grafo navegable de citaciones entre resoluciones.
+> Sistema **RAG agéntico** sobre normativa financiera peruana — **SBS, BCRP, Congreso, MEF, SMV, SUNAT, INDECOPI, BIS, BID**. Responde consultas técnicas con cálculos deterministas, citación de fuente oficial verificable, retrieval híbrido adaptativo, grafo navegable, memoria persistente por usuario y self-healing automatizado.
+
+**🌐 Demo en vivo**: [3.220.87.49.nip.io](https://3.220.87.49.nip.io)
+
+**Corpus actual (mayo 2026)**: ~900 documentos · ~29,000 chunks · 9 instituciones · Manual de Contabilidad SBS completo (Cap I-IV)
 
 ---
 
