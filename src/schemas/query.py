@@ -47,6 +47,11 @@ class QueryRequest(BaseModel):
         default_factory=list,
         description="Últimos turnos (user/assistant) para memoria conversacional",
     )
+    alias: str | None = Field(
+        default=None,
+        max_length=60,
+        description="Alias del usuario para analytics y memoria persistente",
+    )
 
 
 class Source(BaseModel):

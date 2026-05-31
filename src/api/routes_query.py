@@ -458,6 +458,34 @@ async def query(
 
     latencia_ms = (time.perf_counter() - inicio) * 1000
 
+    # Log a query_log si vino con alias (no-bloqueante)
+    if payload.alias:
+        try:
+            from src.storage import query_log as _qlog
+            await _qlog.log_query(
+                pool=pool,
+                alias=payload.alias.strip(),
+                query_text=payload.query,
+                answer_text=resultado.text,
+                confidence=confianza,
+                n_sources=len(fuentes),
+                latency_ms=int(latencia_ms),
+                tokens_in=resultado.input_tokens,
+                tokens_out=resultado.output_tokens,
+                options=payload.options.model_dump(),
+                sources_summary=[
+                    {
+                        "issuer": f.issuer,
+                        "title": (f.title or "")[:120],
+                        "score": f.score,
+                        "doc_id": f.doc_id,
+                    }
+                    for f in fuentes[:8]
+                ],
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
     return QueryResponse(
         trace_id=trace_id,
         answer=resultado.text,

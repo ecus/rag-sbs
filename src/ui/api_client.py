@@ -15,6 +15,20 @@ class APIClient:
         self.base_url = (base_url or os.getenv("API_URL", "http://api:8000")).rstrip("/")
         self._client = httpx.Client(timeout=timeout_sec)
 
+    # ------ Analytics ---------------------------------------------------------
+
+    def analytics_users(self, limit: int = 50) -> list[dict]:
+        r = self._client.get(f"{self.base_url}/v1/analytics/users?limit={limit}")
+        r.raise_for_status()
+        return r.json()
+
+    def analytics_user_queries(self, alias: str, limit: int = 50) -> list[dict]:
+        r = self._client.get(
+            f"{self.base_url}/v1/analytics/user/{alias}/queries?limit={limit}"
+        )
+        r.raise_for_status()
+        return r.json()
+
     # ------ Genéricos ---------------------------------------------------------
 
     def _get(self, path: str) -> dict:
@@ -46,6 +60,7 @@ class APIClient:
         max_hops: int = 1,
         report_mode: bool = False,
         history: list[dict] | None = None,
+        alias: str | None = None,
     ) -> dict:
         r = self._client.post(
             f"{self.base_url}/v1/query",
@@ -57,6 +72,7 @@ class APIClient:
                     "report_mode": report_mode,
                 },
                 "history": history or [],
+                "alias": alias,
             },
         )
         r.raise_for_status()
@@ -76,6 +92,7 @@ class APIClient:
         max_hops: int = 1,
         report_mode: bool = False,
         history: list[dict] | None = None,
+        alias: str | None = None,
     ):
         """Generator: yields (event_type, data) parseando SSE.
 
@@ -95,6 +112,7 @@ class APIClient:
                     "report_mode": report_mode,
                 },
                 "history": history or [],
+                "alias": alias,
             },
         ) as resp:
             resp.raise_for_status()

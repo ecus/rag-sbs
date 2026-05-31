@@ -68,6 +68,68 @@ inyectar_estilos()
 render_header()
 
 
+# =========================================================================
+# Sesión de usuario (alias) — análisis por usuario + memoria persistente
+# =========================================================================
+
+if "user_alias" not in st.session_state:
+    st.session_state.user_alias = None
+
+if not st.session_state.user_alias:
+    with st.container():
+        st.markdown(
+            '<div style="background:linear-gradient(135deg,#eff6ff,#dbeafe);'
+            'border:1px solid #93c5fd;border-radius:12px;padding:20px;'
+            'margin:8px 0 16px;">'
+            '<div style="font-size:24px;margin-bottom:8px;">👤 Identifíquese</div>'
+            '<div style="color:#1e3a8a;font-size:13px;line-height:1.5;">'
+            'Ingrese un alias o nombre para esta sesión. Con esto se recuerdan '
+            'sus consultas anteriores y se pueden analizar patrones de uso.'
+            '</div></div>',
+            unsafe_allow_html=True,
+        )
+        col_a, col_b = st.columns([3, 1])
+        with col_a:
+            alias_input = st.text_input(
+                "Alias o nombre",
+                placeholder="ej. erik, compliance_team, juan_perez",
+                label_visibility="collapsed",
+                key="alias_input_field",
+            )
+        with col_b:
+            if st.button("Comenzar", type="primary", use_container_width=True):
+                if alias_input and alias_input.strip():
+                    alias_limpio = alias_input.strip()[:60]
+                    try:
+                        import httpx as _httpx
+                        _httpx.post(
+                            f"{obtener_cliente().base_url}/v1/analytics/session",
+                            json={"alias": alias_limpio},
+                            timeout=5,
+                        )
+                    except Exception:  # noqa: BLE001
+                        pass
+                    st.session_state.user_alias = alias_limpio
+                    # Recuperar memoria de sesiones anteriores
+                    try:
+                        import httpx as _httpx
+                        cliente_tmp = obtener_cliente()
+                        rmem = _httpx.get(
+                            f"{cliente_tmp.base_url}/v1/analytics/user/{alias_limpio}/memory?limit=6",
+                            timeout=5,
+                        )
+                        if rmem.status_code == 200:
+                            mem = rmem.json() or []
+                            if mem:
+                                st.session_state.historial_chat = mem
+                    except Exception:  # noqa: BLE001
+                        pass
+                    st.rerun()
+                else:
+                    st.warning("Por favor ingrese un alias.")
+        st.stop()
+
+
 @st.cache_resource
 def obtener_cliente() -> APIClient:
     return APIClient()
@@ -138,6 +200,7 @@ def _procesar_streaming(
                 max_hops=max_hops if usar_grafo else 0,
                 report_mode=modo_informe,
                 history=historial,
+                alias=st.session_state.get("user_alias"),
             ):
                 if evento == "status":
                     paso = data.get("step", "")
@@ -269,6 +332,30 @@ with st.sidebar:
         '</div>',
         unsafe_allow_html=True,
     )
+
+    # Indicador de sesión activa (siempre visible)
+    if st.session_state.get("user_alias"):
+        st.markdown(
+            f'<div style="background:#f0fdf4;border:1px solid #86efac;'
+            f'border-radius:8px;padding:8px 12px;margin-bottom:12px;'
+            f'font-size:12px;color:#166534;">'
+            f'👤 <b>{st.session_state.user_alias}</b><br>'
+            f'<span style="color:#475569;font-size:10px;">'
+            f'Sus consultas se registran para análisis y memoria.</span>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+        col_x, col_y = st.columns(2)
+        with col_x:
+            if st.button("🔚 Cerrar", use_container_width=True, key="logout"):
+                st.session_state.user_alias = None
+                st.session_state.historial_chat = []
+                st.rerun()
+        with col_y:
+            if st.button("🗑 Chat", use_container_width=True, key="clear_chat",
+                         help="Limpiar conversación (mantiene la sesión)"):
+                st.session_state.historial_chat = []
+                st.rerun()
 
     if not st.session_state.modo_tecnico:
         # ----- MODO USUARIO: simple, amigable -----
@@ -686,6 +773,7 @@ with tab_chat:
                     max_hops=max_hops if usar_grafo else 0,
                     report_mode=modo_informe,
                     history=historial_backend,
+                    alias=st.session_state.get("user_alias"),
                 )
                 # Respuesta con [Fuente N] resaltados en amarillo
                 sin_ev = _es_respuesta_sin_evidencia(respuesta["answer"])
@@ -1050,6 +1138,57 @@ with tab_stats:
 # ===========================================================================
 
 with tab_runs:
+    # ----------------------------------------------------------------------
+    # Sección "Analytics de usuarios" — consultas registradas
+    # ----------------------------------------------------------------------
+    st.markdown("### 👥 Analytics de usuarios")
+    st.caption(
+        "Consultas registradas por alias. Solo se loguea si el usuario se "
+        "identificó al entrar (lo cual hacemos siempre desde v0.4)."
+    )
+    try:
+        users = api.analytics_users(limit=30)
+        if not users:
+            st.info("Aún no hay consultas registradas.")
+        else:
+            import pandas as _pd
+            df_users = _pd.DataFrame(users)
+            df_users.columns = [
+                "Alias", "Consultas", "Última actividad",
+                "Confianza ALTA", "Sin evidencia", "Latencia avg (ms)",
+            ]
+            st.dataframe(df_users, use_container_width=True, hide_index=True, height=240)
+
+            sel = st.selectbox(
+                "Ver consultas de:",
+                options=["(elegir usuario)"] + [u["alias"] for u in users],
+                key="analytics_user_sel",
+            )
+            if sel != "(elegir usuario)":
+                qrs = api.analytics_user_queries(sel, limit=30)
+                for q in qrs:
+                    badge_conf = {
+                        "alta": "🟢",
+                        "media": "🟡",
+                        "baja": "🟠",
+                    }.get(q.get("confidence") or "", "⚪")
+                    with st.expander(
+                        f"{badge_conf} {(q.get('query') or '')[:90]}"
+                        f"  · {q.get('created_at','')[:16]}"
+                    ):
+                        st.caption(
+                            f"Confianza: {q.get('confidence') or 'n/a'} · "
+                            f"Fuentes: {q.get('n_sources', 0)} · "
+                            f"Latencia: {q.get('latency_ms', 0)} ms"
+                        )
+                        st.markdown(f"**Pregunta:** {q.get('query','')}")
+                        if q.get("answer"):
+                            st.markdown(f"**Respuesta:** {q['answer'][:1500]}…")
+    except Exception as exc:  # noqa: BLE001
+        st.warning(f"Analytics no disponible: {exc}")
+
+    st.markdown("---")
+
     # ----------------------------------------------------------------------
     # Sección "Tarea de fondo" — ingesta automática con caps
     # ----------------------------------------------------------------------
