@@ -38,8 +38,42 @@ class IngestionScheduler:
         await self.reload_jobs()
         self._registrar_background_worker()
         self._registrar_graph_rebuild()
+        self._registrar_zombie_cleanup()
         self.scheduler.start()
         logger.info("IngestionScheduler started with %d jobs", len(self.scheduler.get_jobs()))
+
+    def _registrar_zombie_cleanup(self) -> None:
+        """Cada 15 min, marca como aborted runs colgados > 30 min."""
+        self.scheduler.add_job(
+            self._limpiar_zombies,
+            trigger=CronTrigger.from_crontab("*/15 * * * *", timezone="UTC"),
+            id="zombies:cleanup",
+            name="cleanup zombie runs",
+            replace_existing=True,
+            misfire_grace_time=900,
+            coalesce=True,
+            max_instances=1,
+        )
+
+    async def _limpiar_zombies(self) -> None:
+        try:
+            async with self.pool.connection() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        """
+                        UPDATE ingestion_runs
+                        SET status='aborted', finished_at=NOW()
+                        WHERE status='running'
+                          AND started_at < NOW() - INTERVAL '30 minutes'
+                        """
+                    )
+                    if cur.rowcount > 0:
+                        logger.warning(
+                            "Zombie cleanup: %d runs marcados como aborted",
+                            cur.rowcount,
+                        )
+        except Exception:
+            logger.exception("Falló zombie cleanup")
 
     def _registrar_background_worker(self) -> None:
         """Job dedicado: tick del worker de ingesta automática cada 10 min."""
