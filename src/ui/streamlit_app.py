@@ -345,16 +345,22 @@ with st.sidebar:
             f'</div>',
             unsafe_allow_html=True,
         )
-        col_x, col_y = st.columns(2)
+        col_x, col_y, col_z = st.columns(3)
         with col_x:
-            if st.button("🔚 Cerrar", use_container_width=True, key="logout"):
+            if st.button("🔚 Salir", use_container_width=True, key="logout"):
                 st.session_state.user_alias = None
                 st.session_state.historial_chat = []
                 st.rerun()
         with col_y:
             if st.button("🗑 Chat", use_container_width=True, key="clear_chat_sidebar",
-                         help="Limpiar conversación (mantiene la sesión)"):
+                         help="Limpiar conversación (mantiene sesión)"):
                 st.session_state.historial_chat = []
+                st.rerun()
+        with col_z:
+            if st.button("🆕 Tema", use_container_width=True, key="new_topic",
+                         help="Limpiar contexto: la próxima pregunta se trata como tema nuevo, sin sesgos de conversación anterior"):
+                st.session_state.historial_chat = []
+                st.toast("🆕 Contexto limpiado — próxima pregunta sin sesgo previo", icon="✨")
                 st.rerun()
 
     if not st.session_state.modo_tecnico:

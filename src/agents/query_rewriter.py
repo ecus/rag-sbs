@@ -121,6 +121,50 @@ def _extraer_json(texto: str) -> dict | None:
             return None
 
 
+def _es_query_autocontenida(consulta: str) -> bool:
+    """Detecta si la consulta NO depende del historial conversacional.
+
+    Heurísticas que sugieren autocontención:
+    - No empieza con conector de continuación ("y", "y para", "y si",
+      "entonces", "ahora")
+    - No contiene pronombres demostrativos sueltos ("eso", "ese", "aquello",
+      "este caso")
+    - Mide >= 20 caracteres (queries cortas dependen casi siempre del contexto)
+    - Contiene algún sustantivo regulatorio clave (acrónimo, número de
+      resolución, nombre de norma)
+    """
+    q = consulta.strip().lower()
+    if not q:
+        return False
+    if len(q) < 20:
+        return False
+
+    # Conectores de continuación al inicio → casi siempre referencia previa
+    inicios_dependientes = (
+        "y ", "y, ", "y para", "y si", "y entonces", "y qué",
+        "entonces ", "ahora ", "luego ", "después ",
+        "y respecto", "y sobre", "qué pasa con",
+    )
+    if q.startswith(inicios_dependientes):
+        return False
+
+    # Pronombres demostrativos sueltos sin sustantivo claro
+    if re.search(r"\b(eso|ese|aquello|esta|este caso|aquí|allí)\b", q) and \
+       not re.search(r"\b(ley|res\b|resoluci[oó]n|art[ií]culo|cuenta|circular)\b", q):
+        return False
+
+    # Si tiene una entidad regulatoria clara → autocontenida
+    if re.search(
+        r"\b(res\b|resoluci[oó]n|ley|art[ií]culo|cap[ií]tulo|anexo|"
+        r"circular|reglamento|decreto|sbs|bcrp|smv|sunat|indecopi|mef|"
+        r"\d{3,5}-\d{4})\b",
+        q,
+    ):
+        return True
+
+    return True  # default: tratamos como autocontenida
+
+
 async def reescribir_consulta(
     consulta: str,
     historial: list[dict],
@@ -137,8 +181,20 @@ async def reescribir_consulta(
         dict con keys: rewritten (str), was_rewritten (bool), reason (str).
     """
     if not historial:
-        # Sin historial no hay nada que reescribir
         return {"rewritten": consulta, "was_rewritten": False, "reason": "sin_historial"}
+
+    # NUEVO: si la consulta es autocontenida, NO inyectar contexto
+    # (evita que el rewriter arrastre sesgos del historial irrelevante)
+    if _es_query_autocontenida(consulta):
+        logger.info(
+            "Query autocontenida — skip rewriter (no se inyecta historial): %r",
+            consulta[:80],
+        )
+        return {
+            "rewritten": consulta,
+            "was_rewritten": False,
+            "reason": "autocontenida_skip_historial",
+        }
 
     prompt = (
         PROMPT_REWRITER
