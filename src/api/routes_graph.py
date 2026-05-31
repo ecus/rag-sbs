@@ -901,13 +901,13 @@ PAGINA_GRAFO_HTML = """<!DOCTYPE html>
     </div>
 
     <div class="grupo">
-      <label>Espaciado entre nodos<span class="valor" id="v-espaciado">130</span></label>
-      <input type="range" id="s-espaciado" min="60" max="400" step="10" value="130" />
+      <label>Espaciado entre nodos<span class="valor" id="v-espaciado">250</span></label>
+      <input type="range" id="s-espaciado" min="60" max="500" step="10" value="250" />
     </div>
 
     <div class="grupo">
-      <label>Repulsión<span class="valor" id="v-repulsion">3500</span></label>
-      <input type="range" id="s-repulsion" min="500" max="20000" step="250" value="3500" />
+      <label>Repulsión<span class="valor" id="v-repulsion">9000</span></label>
+      <input type="range" id="s-repulsion" min="500" max="20000" step="250" value="9000" />
     </div>
 
     <div class="grupo">
@@ -975,11 +975,11 @@ PAGINA_GRAFO_HTML = """<!DOCTYPE html>
     let timeoutTransicion = null;
 
     const CONFIG_DEFAULT = {
-      duracion: 1200,    // ms de la fase de entrada
+      duracion: 1500,    // ms de la fase de entrada
       intensidad: 2,     // 1 (poca) — 5 (mucha): controla damping en entrada
-      espaciado: 130,    // springLength base
-      repulsion: 3500,   // |gravitationalConstant| en barnesHut
-      gravedad: 0.30,    // centralGravity (jala al centro)
+      espaciado: 250,    // springLength base (era 130 → ahora más aire)
+      repulsion: 9000,   // |gravitationalConstant| (era 3500 → más separación)
+      gravedad: 0.15,    // centralGravity (era 0.30 → menos aglomeración central)
     };
     let config = { ...CONFIG_DEFAULT };
 

@@ -237,96 +237,151 @@ def _procesar_streaming(
 # Sidebar — estado del sistema
 # ---------------------------------------------------------------------------
 
+# =========================================================================
+# Sidebar amigable por defecto · modo técnico bajo toggle
+# =========================================================================
+
+# Toggle global: modo técnico (admin) ↔ modo usuario (default)
+if "modo_tecnico" not in st.session_state:
+    st.session_state.modo_tecnico = False
+
 with st.sidebar:
-    st.markdown("### Estado del sistema")
-    salud = api.health()
-    if salud.get("status") == "healthy":
-        st.success("Operativo")
-    elif salud.get("status") == "degraded":
-        st.warning("Degradado")
-    else:
-        st.error(f"No disponible: {salud.get('error', salud.get('status'))}")
-
-    if salud.get("checks"):
-        for componente, estado in salud["checks"].items():
-            simbolo = "✓" if estado == "ok" else "✗"
-            st.caption(f"{simbolo} **{componente}**: {estado}")
-
-    st.markdown("### Corpus")
-    try:
-        stats = api.graph_stats()
-        col1, col2 = st.columns(2)
-        col1.metric("Documentos", stats["nodos_por_tipo"].get("document", 0))
-        col2.metric("Resoluciones", stats["nodos_por_tipo"].get("resolution", 0))
-        col1.metric("Aristas (citas)", stats["aristas_total"])
-        col2.metric("Tópicos", stats["nodos_por_tipo"].get("topic", 0))
-    except Exception:  # noqa: BLE001
-        st.info("Esperando datos del grafo…")
-
-    # Breakdown por institución emisora
-    try:
-        by_issuer = api.stats_by_issuer()
-        items = by_issuer.get("por_issuer", [])
-        if items:
-            st.markdown("### Por institución")
-            # Paleta de colores institucional
-            colores_inst = {
-                "SBS": "#003d7a",      # azul SBS
-                "BCRP": "#b91c1c",     # rojo BCRP
-                "Congreso": "#7c3aed", # morado Congreso
-                "MEF": "#15803d",
-                "SMV": "#0891b2",
-                "INDECOPI": "#ca8a04",
-                "SUNAT": "#be185d",
-                "(s/d)": "#64748b",
-            }
-            for it in items:
-                issuer = it.get("issuer", "?")
-                docs = it.get("docs", 0)
-                chunks = it.get("chunks", 0)
-                color = colores_inst.get(issuer, "#475569")
-                st.markdown(
-                    f"""
-                    <div style="
-                        background: {color}11;
-                        border-left: 3px solid {color};
-                        padding: 6px 10px;
-                        border-radius: 4px;
-                        margin-bottom: 4px;
-                        font-size: 12px;
-                    ">
-                        <strong style="color: {color};">{issuer}</strong>
-                        <span style="float: right; color: #64748b;">
-                            {docs} docs · {chunks} chunks
-                        </span>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-    except Exception:  # noqa: BLE001
-        pass
-
-    st.markdown("### Acciones")
-    if st.button("Disparar scan", use_container_width=True):
-        with st.spinner("Disparando scan..."):
-            r = api.trigger_scan(force=False)
-            st.toast(f"Scan disparado: {r.get('run_id', '?')[:8]}…", icon="⚡")
-
-    st.markdown("---")
-    st.caption(
-        "**RAG SBS** v0.3 · Portafolio personal\n\n"
-        "Datos: corpus público SBS Perú + BCRP + Leyes Congreso\n\n"
-        "Stack: FastAPI · pgvector · Gemini 2.5 Flash · NetworkX"
+    # Logo + claim siempre
+    st.markdown(
+        '<div style="text-align:center;padding:8px 0 16px;">'
+        '<div style="font-size:32px;line-height:1;">🏛️</div>'
+        '<div style="font-weight:700;font-size:18px;color:#003d7a;'
+        'margin-top:6px;">Mesa Experta</div>'
+        '<div style="font-size:11px;color:#64748b;letter-spacing:0.5px;'
+        'text-transform:uppercase;">Regulación Bancaria · Perú</div>'
+        '</div>',
+        unsafe_allow_html=True,
     )
+
+    if not st.session_state.modo_tecnico:
+        # ----- MODO USUARIO: simple, amigable -----
+        st.markdown("### 💡 ¿Cómo preguntar?")
+        st.markdown(
+            """
+            <div style="background:#f1f5f9;padding:12px;border-radius:8px;
+            font-size:13px;line-height:1.5;color:#334155;">
+            <p style="margin:0 0 8px 0;"><b>✅ Buenas preguntas:</b></p>
+            <ul style="margin:0 0 0 16px;padding:0;">
+              <li>¿Qué dice la Resolución SBS 11356-2008 sobre clasificación del deudor?</li>
+              <li>¿Cuáles son las provisiones procíclicas vigentes?</li>
+              <li>¿Qué cuentas afecta una titulización según el Manual de Contabilidad?</li>
+            </ul>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.caption("La mesa busca solo en normativa oficial publicada (SBS, BCRP, Congreso, MEF, SMV).")
+
+        st.markdown("### 📚 Cobertura")
+        try:
+            by_issuer = api.stats_by_issuer()
+            items = by_issuer.get("por_issuer", [])
+            total_docs = sum(it.get("docs", 0) for it in items)
+            st.metric("Documentos en mesa", f"{total_docs:,}")
+            instituciones = ", ".join(it["issuer"] for it in items if it["issuer"] != "(s/d)")
+            st.caption(f"Instituciones: {instituciones}")
+        except Exception:  # noqa: BLE001
+            pass
+
+        st.markdown("---")
+        if st.button("🔧 Modo técnico", use_container_width=True,
+                     help="Ver detalles del sistema, ingesta, comparación A/B"):
+            st.session_state.modo_tecnico = True
+            st.rerun()
+        st.caption(
+            '<div style="font-size:10px;color:#94a3b8;text-align:center;'
+            'margin-top:12px;">v0.3 · Portafolio personal</div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        # ----- MODO TÉCNICO: dashboard admin -----
+        if st.button("← Volver a modo usuario", use_container_width=True):
+            st.session_state.modo_tecnico = False
+            st.rerun()
+
+        st.markdown("### 🔍 Estado del sistema")
+        salud = api.health()
+        if salud.get("status") == "healthy":
+            st.success("Operativo")
+        elif salud.get("status") == "degraded":
+            st.warning("Degradado")
+        else:
+            st.error(f"No disponible: {salud.get('error', salud.get('status'))}")
+
+        if salud.get("checks"):
+            for componente, estado in salud["checks"].items():
+                simbolo = "✓" if estado == "ok" else "✗"
+                st.caption(f"{simbolo} **{componente}**: {estado}")
+
+        st.markdown("### 📊 Corpus")
+        try:
+            stats = api.graph_stats()
+            col1, col2 = st.columns(2)
+            col1.metric("Documentos", stats["nodos_por_tipo"].get("document", 0))
+            col2.metric("Resoluciones", stats["nodos_por_tipo"].get("resolution", 0))
+            col1.metric("Aristas (citas)", stats["aristas_total"])
+            col2.metric("Tópicos", stats["nodos_por_tipo"].get("topic", 0))
+        except Exception:  # noqa: BLE001
+            st.info("Esperando datos del grafo…")
+
+        try:
+            by_issuer = api.stats_by_issuer()
+            items = by_issuer.get("por_issuer", [])
+            if items:
+                st.markdown("### 🏢 Por institución")
+                colores_inst = {
+                    "SBS": "#003d7a", "BCRP": "#b91c1c", "Congreso": "#7c3aed",
+                    "MEF": "#15803d", "SMV": "#0891b2", "INDECOPI": "#ca8a04",
+                    "SUNAT": "#be185d", "BIS": "#0f766e", "BID": "#9333ea",
+                    "(s/d)": "#64748b",
+                }
+                for it in items:
+                    issuer = it.get("issuer", "?")
+                    docs = it.get("docs", 0)
+                    chunks = it.get("chunks", 0)
+                    color = colores_inst.get(issuer, "#475569")
+                    st.markdown(
+                        f'<div style="background:{color}11;border-left:3px solid {color};'
+                        f'padding:6px 10px;border-radius:4px;margin-bottom:4px;font-size:12px;">'
+                        f'<strong style="color:{color};">{issuer}</strong>'
+                        f'<span style="float:right;color:#64748b;">{docs} docs · {chunks} chunks</span>'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
+        except Exception:  # noqa: BLE001
+            pass
+
+        st.markdown("### ⚡ Acciones")
+        if st.button("Disparar scan", use_container_width=True):
+            with st.spinner("Disparando scan..."):
+                r = api.trigger_scan(force=False)
+                st.toast(f"Scan disparado: {r.get('run_id', '?')[:8]}…", icon="⚡")
+
+        st.markdown("---")
+        st.caption(
+            "Stack: FastAPI · pgvector · Gemini 2.5 Flash · NetworkX"
+        )
 
 
 # ---------------------------------------------------------------------------
 # Tabs
 # ---------------------------------------------------------------------------
 
-tab_chat, tab_ab, tab_grafo, tab_stats, tab_runs = st.tabs(
-    ["Consulta", "Comparación A/B", "Grafo navegable", "Tópicos", "Operación"]
-)
+if st.session_state.modo_tecnico:
+    tab_chat, tab_stats, tab_grafo, tab_ab, tab_runs = st.tabs(
+        ["💬 Consultar", "🧩 Tópicos", "🧠 Mapa regulatorio",
+         "🔬 A/B (técnico)", "⚙️ Administración"]
+    )
+else:
+    tab_chat, tab_stats, tab_grafo, tab_ab, tab_runs = st.tabs(
+        ["💬 Consultar", "🧩 Tópicos", "🧠 Mapa regulatorio",
+         "  ", "  "]  # tabs casi invisibles cuando modo usuario
+    )
 
 
 # ===========================================================================
@@ -334,10 +389,10 @@ tab_chat, tab_ab, tab_grafo, tab_stats, tab_runs = st.tabs(
 # ===========================================================================
 
 with tab_chat:
-    st.markdown("### Pregúntale a la mesa experta")
+    st.markdown("### 💬 Consultá a la mesa experta")
     st.caption(
-        "El sistema responde **solo con base en el corpus oficial SBS** que ya descargó. "
-        "Si no encuentra evidencia, lo dice explícitamente."
+        "Respuestas basadas **únicamente en normativa oficial publicada** "
+        "(SBS, BCRP, Congreso, MEF, SMV, SUNAT, INDECOPI). Si no hay evidencia, lo decimos."
     )
 
     if "historial_chat" not in st.session_state:
@@ -674,10 +729,10 @@ with tab_ab:
 # ===========================================================================
 
 with tab_grafo:
-    st.markdown("### Cerebro Digital — grafo interactivo")
+    st.markdown("### 🧠 Mapa interactivo de la regulación")
     st.caption(
-        "Vista nativa del knowledge graph: documentos, resoluciones, leyes, artículos, "
-        "anexos y tópicos. Click en cualquier nodo para ver sus conexiones."
+        "Cada círculo es un documento o entidad legal citada. Las líneas son "
+        "referencias entre normas. Click en cualquier nodo para explorarlo."
     )
     # Detectar el host con el que el navegador llegó a Streamlit
     try:
@@ -696,11 +751,11 @@ with tab_grafo:
 # ===========================================================================
 
 with tab_stats:
-    st.markdown("### 🧭 Tópicos descubiertos en el corpus")
+    st.markdown("### 🧭 Áreas temáticas de la regulación")
     st.caption(
-        "Clusters semánticos detectados por K-means sobre los embeddings del corpus. "
-        "Cada tópico agrupa chunks por similitud temática. El nombre lo asigna un LLM "
-        "a partir de muestras representativas."
+        "Cada tarjeta agrupa partes del corpus regulatorio que tratan sobre el "
+        "mismo tema. Útil para explorar qué cubre la mesa por área (ej. riesgo "
+        "crediticio, LAFT, gobierno corporativo) antes de consultar."
     )
 
     # ---- Cards por tópico (vista principal) ----
@@ -711,17 +766,16 @@ with tab_stats:
         topicos_detallados = detalle.get("topicos", [])
         if not topicos_detallados:
             st.info(
-                "Aún no hay tópicos. Ve a Operación → ejecuta scan, luego en consola "
-                "POST /v1/graph/topics/build."
+                "🔄 Las áreas temáticas se están reconstruyendo. Volvé en unos minutos."
             )
         else:
             # Resumen
             total_chunks_topificados = sum(t.get("miembros", 0) for t in topicos_detallados)
             cols_s = st.columns(3)
             with cols_s[0]:
-                st.metric("Tópicos", len(topicos_detallados))
+                st.metric("Áreas temáticas", len(topicos_detallados))
             with cols_s[1]:
-                st.metric("Chunks clusterizados", f"{total_chunks_topificados:,}")
+                st.metric("Fragmentos analizados", f"{total_chunks_topificados:,}")
             with cols_s[2]:
                 docs_unicos_total = sum(t.get("documentos_unicos", 0) for t in topicos_detallados)
                 st.metric("Σ documentos por tópico", docs_unicos_total)
