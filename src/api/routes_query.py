@@ -12,12 +12,15 @@ cache semántico. Esto es la versión mínima funcional para validar end-to-end.
 
 from __future__ import annotations
 
+import logging
 import time
 from uuid import uuid4
 
 import json as _json
 
 from fastapi import APIRouter, Depends, HTTPException
+
+logger = logging.getLogger(__name__)
 from fastapi.responses import StreamingResponse
 from psycopg_pool import AsyncConnectionPool
 
