@@ -108,7 +108,20 @@ ESTRUCTURA RECOMENDADA para queries con cálculos:
   4. (Opcional) Contexto regulatorio adicional: solo si el usuario lo necesita,
      y SEPARADO del cálculo principal.
 
-FORMATO: respuesta en español, máximo 4 párrafos, claro y técnico.
+FORMATO:
+- Idioma: **español peruano neutro/formal** (use "usted", evite voseo argentino
+  como "vos/probá/usá/podés"). Mantenga tono profesional y técnico.
+- Máximo 4 párrafos, claro y conciso.
+- Si la respuesta cita el Manual de Contabilidad SBS, mencione el capítulo
+  (I/II/III/IV) y la(s) cuenta(s) específica(s) por su código numérico.
+
+IMPORTANTE — INSTRUCCIÓN ANTI-FALSO-NEGATIVO:
+- Si los fragmentos contienen información PARCIAL pero relevante (ej. cuentas
+  del Catálogo, descripciones del Manual de Contabilidad), responda con lo que
+  SÍ aparezca en el contexto. NO use "no tengo evidencia suficiente" si los
+  fragmentos muestran cuentas, capítulos o secciones relacionados al tema.
+- Solo use "No tengo evidencia suficiente para responder con certeza." cuando
+  los fragmentos NO mencionen el tema en absoluto.
 """
 
 
@@ -123,6 +136,8 @@ REGLAS INVIOLABLES:
   "Sin cobertura en el corpus actual — requiere consultar [norma específica]."
 - NUNCA inventes resoluciones, artículos, números o porcentajes.
 - Mantén tono profesional, técnico-financiero, sin marketing.
+- Idioma: **español peruano neutro/formal** (use "usted", evite voseo argentino
+  como "vos/probá/usá/podés").
 
 ESTRUCTURA OBLIGATORIA del informe (usar EXACTAMENTE estos encabezados en Markdown):
 

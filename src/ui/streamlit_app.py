@@ -390,7 +390,7 @@ else:
 # ===========================================================================
 
 with tab_chat:
-    st.markdown("### 💬 Consultá a la mesa experta")
+    st.markdown("### 💬 Consulte a la mesa experta")
     st.caption(
         "Respuestas basadas **únicamente en normativa oficial publicada** "
         "(SBS, BCRP, Congreso, MEF, SMV, SUNAT, INDECOPI). Si no hay evidencia, lo decimos."

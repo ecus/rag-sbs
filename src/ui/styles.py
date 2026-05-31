@@ -870,9 +870,9 @@ def panel_sin_evidencia(n_fuentes: int = 0) -> str:
             'pero ninguno responde directamente</div>'
             '<div style="color:#1e3a8a;font-size:14px;line-height:1.5;">'
             'Los documentos abajo cubren temas cercanos a tu pregunta pero no '
-            'tienen la respuesta exacta. Probá <b>reformular más específico</b> '
-            '(ej. mencioná artículo, número de resolución, o cuenta contable) '
-            'o activá <b>Grafo</b> + <b>Saltos: 2</b> para explorar conexiones.'
+            'tienen la respuesta exacta. Intente <b>reformular más específico</b> '
+            '(ej. mencione artículo, número de resolución, o cuenta contable) '
+            'o active <b>Grafo</b> + <b>Saltos: 2</b> para explorar conexiones.'
             '</div></div></div>'
         )
     return (
@@ -885,8 +885,8 @@ def panel_sin_evidencia(n_fuentes: int = 0) -> str:
         'margin-bottom:6px;">No se encontró información en el corpus</div>'
         '<div style="color:#78350f;font-size:14px;line-height:1.5;">'
         'Esta consulta no encontró documentos relevantes en la base regulatoria. '
-        'Probá reformular la pregunta, usá términos oficiales (ej. "Resolución SBS", '
-        '"Manual de Contabilidad") o activá <b>Grafo</b> y subí <b>Saltos</b> a 2.'
+        'Intente reformular la pregunta, use términos oficiales (ej. "Resolución SBS", '
+        '"Manual de Contabilidad") o active <b>Grafo</b> y suba <b>Saltos</b> a 2.'
         '</div></div></div>'
     )
 
