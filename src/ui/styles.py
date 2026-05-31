@@ -705,9 +705,96 @@ hr { margin: 1.5rem 0 !important; border-color: var(--sbs-border) !important; }
 """
 
 
+CHAT_CSS = """
+<style>
+/* === Chat estilo conversación moderna === */
+
+/* Burbuja de usuario: alineada a la derecha, color SBS */
+[data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-user"]) {
+  flex-direction: row-reverse !important;
+  background: transparent !important;
+  margin-left: 15% !important;
+}
+[data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-user"]) > div:nth-child(2) {
+  background: linear-gradient(135deg, #003d7a 0%, #0656a5 100%) !important;
+  color: white !important;
+  padding: 12px 18px !important;
+  border-radius: 18px 18px 4px 18px !important;
+  box-shadow: 0 2px 6px rgba(0,61,122,0.18) !important;
+  max-width: 80% !important;
+}
+[data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-user"]) > div:nth-child(2) p,
+[data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-user"]) > div:nth-child(2) * {
+  color: white !important;
+  margin-bottom: 0 !important;
+}
+[data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-user"])
+  [data-testid="chatAvatarIcon-user"] {
+  background: #003d7a !important;
+}
+
+/* Burbuja del asistente: izquierda, fondo claro */
+[data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-assistant"]) {
+  background: transparent !important;
+  margin-right: 8% !important;
+}
+[data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-assistant"]) > div:nth-child(2) {
+  background: #f8fafc !important;
+  border: 1px solid #e2e8f0 !important;
+  padding: 14px 18px !important;
+  border-radius: 4px 18px 18px 18px !important;
+  box-shadow: 0 1px 3px rgba(15,23,42,0.05) !important;
+}
+[data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-assistant"])
+  [data-testid="chatAvatarIcon-assistant"] {
+  background: linear-gradient(135deg, #ffa500, #ff8c00) !important;
+}
+
+/* Input fijo al fondo con sombra suave */
+[data-testid="stChatInput"] {
+  position: sticky !important;
+  bottom: 0 !important;
+  background: linear-gradient(180deg,
+    rgba(255,255,255,0) 0%,
+    rgba(255,255,255,0.95) 20%,
+    white 100%) !important;
+  padding-top: 20px !important;
+  z-index: 100 !important;
+}
+[data-testid="stChatInput"] > div {
+  border-radius: 24px !important;
+  border: 1.5px solid #cbd5e1 !important;
+  box-shadow: 0 2px 12px rgba(15,23,42,0.08) !important;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+[data-testid="stChatInput"] > div:focus-within {
+  border-color: #003d7a !important;
+  box-shadow: 0 2px 16px rgba(0,61,122,0.15) !important;
+}
+
+/* Botón de envío más prominente */
+[data-testid="stChatInputSubmitButton"] {
+  background: #003d7a !important;
+  color: white !important;
+  border-radius: 50% !important;
+}
+[data-testid="stChatInputSubmitButton"]:hover {
+  background: #0656a5 !important;
+}
+
+/* Más espacio entre turns */
+[data-testid="stChatMessage"] {
+  margin-bottom: 18px !important;
+  padding: 0 !important;
+}
+</style>
+"""
+
+
 def inyectar_estilos() -> None:
     """Llamar una vez al inicio de la app Streamlit."""
     st.markdown(CSS, unsafe_allow_html=True)
+    st.markdown(CHAT_CSS, unsafe_allow_html=True)
 
 
 def render_header() -> None:
@@ -765,8 +852,29 @@ def badge_confianza(nivel: str, respuesta_texto: str | None = None) -> str:
     return f'<span class="conf-badge conf-{nivel}">{nivel}</span>'
 
 
-def panel_sin_evidencia() -> str:
-    """Tarjeta visual prominente cuando la respuesta no tiene evidencia."""
+def panel_sin_evidencia(n_fuentes: int = 0) -> str:
+    """Tarjeta visual cuando la respuesta no tiene evidencia.
+
+    Si ``n_fuentes > 0``, muestra mensaje matizado (evidencia parcial)
+    que reconoce los documentos relacionados encontrados.
+    """
+    if n_fuentes > 0:
+        return (
+            '<div style="background:linear-gradient(135deg,#eff6ff,#dbeafe);'
+            'border:1px solid #3b82f6;border-radius:12px;padding:20px;'
+            'margin:16px 0;display:flex;gap:16px;align-items:center;">'
+            '<div style="font-size:42px;">📂</div>'
+            '<div style="flex:1;">'
+            '<div style="font-weight:700;font-size:16px;color:#1e40af;'
+            f'margin-bottom:6px;">Encontré {n_fuentes} documento(s) relacionado(s), '
+            'pero ninguno responde directamente</div>'
+            '<div style="color:#1e3a8a;font-size:14px;line-height:1.5;">'
+            'Los documentos abajo cubren temas cercanos a tu pregunta pero no '
+            'tienen la respuesta exacta. Probá <b>reformular más específico</b> '
+            '(ej. mencioná artículo, número de resolución, o cuenta contable) '
+            'o activá <b>Grafo</b> + <b>Saltos: 2</b> para explorar conexiones.'
+            '</div></div></div>'
+        )
     return (
         '<div style="background:linear-gradient(135deg,#fffbeb,#fef3c7);'
         'border:1px solid #fbbf24;border-radius:12px;padding:20px;'

@@ -178,7 +178,8 @@ def _procesar_streaming(
         if sin_evidencia:
             # Panel prominente en lugar del texto plano + ocultar contradicciones
             placeholder_texto.markdown(
-                panel_sin_evidencia(), unsafe_allow_html=True
+                panel_sin_evidencia(n_fuentes=len(fuentes_recibidas or [])),
+                unsafe_allow_html=True
             )
         else:
             placeholder_texto.markdown(
@@ -575,7 +576,10 @@ with tab_chat:
                 sin_ev = _es_respuesta_sin_evidencia(respuesta["answer"])
                 if sin_ev:
                     placeholder.markdown(
-                        panel_sin_evidencia(), unsafe_allow_html=True
+                        panel_sin_evidencia(
+                            n_fuentes=len(respuesta.get("sources") or [])
+                        ),
+                        unsafe_allow_html=True,
                     )
                 else:
                     placeholder.markdown(
