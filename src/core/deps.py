@@ -37,6 +37,27 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await pool.open()
     app.state.pg_pool = pool
 
+    # Limpiar runs zombies (status='running' > 30 min sin actualización)
+    # Causados por crashes del proceso anterior o deploys mientras procesaba.
+    try:
+        async with pool.connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """
+                    UPDATE ingestion_runs
+                    SET status='aborted', finished_at=NOW()
+                    WHERE status='running' AND started_at < NOW() - INTERVAL '30 minutes'
+                    """
+                )
+                if cur.rowcount > 0:
+                    import logging
+                    logging.getLogger(__name__).info(
+                        "Cleanup startup: %d runs zombies marcados como aborted",
+                        cur.rowcount,
+                    )
+    except Exception:  # noqa: BLE001
+        pass  # no bloquear startup
+
     # LLM provider (singleton)
     app.state.llm = get_llm_provider()
 

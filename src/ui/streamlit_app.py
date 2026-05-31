@@ -410,6 +410,110 @@ with tab_chat:
     if "historial_chat" not in st.session_state:
         st.session_state.historial_chat = []
 
+    # =====================================================================
+    # 🪄 Asistente de consulta — wizard que estructura preguntas vagas
+    # =====================================================================
+    with st.expander(
+        "🪄 Asistente para formular consulta (recomendado si tu pregunta es compleja)",
+        expanded=False,
+    ):
+        st.caption(
+            "Responda los campos y el asistente arma una consulta estructurada "
+            "que activa el modo informe + grafo + clarificaciones."
+        )
+
+        wz_rol = st.selectbox(
+            "Su rol",
+            [
+                "(seleccione)",
+                "Compliance officer",
+                "Auditor interno/externo",
+                "Riesgos (crédito/operacional/mercado)",
+                "Contabilidad / IFRS",
+                "Tecnología / Ciberseguridad",
+                "Legal / Jurídico",
+                "Operaciones / Negocios",
+                "Inversionista / Mercado de valores",
+                "Asesor regulatorio externo",
+            ],
+            key="wz_rol",
+        )
+        wz_caso = st.text_area(
+            "Describa el caso o situación",
+            placeholder=(
+                "Ej.: Una empresa de créditos está estructurando una operación "
+                "de fondeo con una empresa de inversión, mediante titulización "
+                "de cartera y vehículo de fideicomiso."
+            ),
+            key="wz_caso",
+            height=90,
+        )
+        wz_objetivo = st.selectbox(
+            "¿Qué necesita?",
+            [
+                "(seleccione)",
+                "Informe regulatorio integral (todos los aspectos)",
+                "Identificar normas SBS aplicables",
+                "Calcular un requerimiento (provisión, patrimonio efectivo)",
+                "Conocer el tratamiento contable específico",
+                "Evaluar riesgos del caso (crédito/operacional/etc.)",
+                "Saber qué documentos/reportes presentar",
+                "Comparar dos escenarios",
+            ],
+            key="wz_objetivo",
+        )
+        wz_temas = st.multiselect(
+            "Temas relevantes (opcional, ayuda al retrieval)",
+            [
+                "Riesgo de crédito",
+                "Riesgo operacional",
+                "LAFT (lavado de activos)",
+                "Gobierno corporativo",
+                "Ciberseguridad / TI",
+                "Manual de Contabilidad",
+                "Patrimonio efectivo / Basilea",
+                "Titulización / Fideicomiso",
+                "Pensiones / SPP",
+                "Mercado de valores / SMV",
+                "Protección al consumidor",
+                "Tributario / SUNAT",
+            ],
+            key="wz_temas",
+        )
+
+        if st.button("✨ Generar consulta estructurada", use_container_width=True):
+            if wz_rol == "(seleccione)" or not wz_caso.strip() or wz_objetivo == "(seleccione)":
+                st.warning("Complete los 3 primeros campos para generar la consulta.")
+            else:
+                partes = [
+                    f"**Rol:** Soy {wz_rol.lower()} en una empresa supervisada por la SBS Perú.",
+                    "",
+                    f"**Caso:** {wz_caso.strip()}",
+                    "",
+                    f"**Objetivo:** {wz_objetivo}.",
+                ]
+                if wz_temas:
+                    partes.append("")
+                    partes.append(
+                        f"**Temas relevantes a considerar:** {', '.join(wz_temas)}."
+                    )
+                partes.append("")
+                partes.append(
+                    "Por favor cite todas las normas SBS/BCRP/Congreso/MEF "
+                    "aplicables con número, año y artículo/sección. Si requiere "
+                    "información adicional para responder con precisión, "
+                    "formule las preguntas de clarificación necesarias."
+                )
+                consulta_armada = "\n".join(partes)
+                st.session_state.consulta_pendiente = consulta_armada
+                # Auto-activar toggles ideales para casos complejos
+                st.session_state.chat_graph = True
+                st.session_state.chat_hops = 1  # index 1 → valor 2
+                st.session_state.chat_informe = True
+                st.session_state.chat_agente = True
+                st.success("Consulta lista. Se activaron Grafo + Saltos 2 + Informe + Agente.")
+                st.rerun()
+
     # Opciones del pipeline (6 toggles)
     col_a, col_b, col_c, col_d, col_e, col_f, col_g = st.columns([2, 1, 1, 1, 1, 1, 1])
     with col_b:
