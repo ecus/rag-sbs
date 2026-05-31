@@ -301,7 +301,14 @@ async def query(
             detail=f"LLM provider unreachable for embedding: {exc}",
         ) from exc
 
-    # 2. Hybrid search en pgvector (también con consulta efectiva)
+    # 2. Hybrid search en pgvector con pesos adaptativos (Phase 3)
+    from src.rag.query_profile import detectar as _detectar_perfil
+    _perfil = _detectar_perfil(consulta_efectiva)
+    logger.info(
+        "Query profile: %s (w_vec=%.2f w_txt=%.2f) - %s",
+        _perfil.tipo, _perfil.w_vector, _perfil.w_texto, _perfil.razon,
+    )
+
     async with pool.connection() as conn:
         store = PgVectorStore(conn)
         fragmentos_vec = await store.hybrid_search(
@@ -310,6 +317,8 @@ async def query(
             top_k=5,
             domain=payload.filters.domain,
             validity_status=payload.filters.validity_status or "vigente",
+            w_vector=_perfil.w_vector,
+            w_texto=_perfil.w_texto,
         )
 
     # 2.5 Graph-augmented retrieval (feature flag)
@@ -587,12 +596,20 @@ async def query_stream(
             vector_consulta = vectores[0]
 
             yield _sse("status", {"step": "retrieval"})
+            from src.rag.query_profile import detectar as _detectar_perfil_s
+            _perfil_s = _detectar_perfil_s(consulta_efectiva)
+            logger.info(
+                "Stream query profile: %s (w_vec=%.2f w_txt=%.2f) - %s",
+                _perfil_s.tipo, _perfil_s.w_vector, _perfil_s.w_texto, _perfil_s.razon,
+            )
             async with pool.connection() as conn:
                 store = PgVectorStore(conn)
                 fragmentos_vec = await store.hybrid_search(
                     query_embedding=vector_consulta,
                     query_text=consulta_efectiva,
                     top_k=5,
+                    w_vector=_perfil_s.w_vector,
+                    w_texto=_perfil_s.w_texto,
                     domain=payload.filters.domain,
                     validity_status=payload.filters.validity_status or "vigente",
                 )

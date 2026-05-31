@@ -151,6 +151,8 @@ class PgVectorStore:
         validity_status: str | None = "vigente",
         rrf_k: int = 60,
         titles_like: list[str] | None = None,
+        w_vector: float = 1.0,
+        w_texto: float = 1.0,
     ) -> list[RetrievedChunk]:
         """Búsqueda híbrida vector + BM25 con Reciprocal Rank Fusion.
 
@@ -232,25 +234,25 @@ class PgVectorStore:
                 # BM25 puede fallar con query vacía o caracteres raros — degrade
                 filas_texto = []
 
-        # 3. RRF fusion
+        # 3. RRF fusion con pesos adaptativos (Phase 3 hybrid tuning)
         puntajes: dict[UUID, dict] = {}
         for rango, fila in enumerate(filas_vec, start=1):
             cid = fila["id"]
             puntajes[cid] = {
                 "fila": fila,
-                "rrf": 1.0 / (rrf_k + rango),
+                "rrf": w_vector * (1.0 / (rrf_k + rango)),
                 "vector_score": float(fila["vector_score"]),
                 "text_score": 0.0,
             }
         for rango, fila in enumerate(filas_texto, start=1):
             cid = fila["id"]
             if cid in puntajes:
-                puntajes[cid]["rrf"] += 1.0 / (rrf_k + rango)
+                puntajes[cid]["rrf"] += w_texto * (1.0 / (rrf_k + rango))
                 puntajes[cid]["text_score"] = float(fila["text_score"])
             else:
                 puntajes[cid] = {
                     "fila": fila,
-                    "rrf": 1.0 / (rrf_k + rango),
+                    "rrf": w_texto * (1.0 / (rrf_k + rango)),
                     "vector_score": 0.0,
                     "text_score": float(fila["text_score"]),
                 }
