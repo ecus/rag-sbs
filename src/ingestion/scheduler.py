@@ -39,8 +39,77 @@ class IngestionScheduler:
         self._registrar_background_worker()
         self._registrar_graph_rebuild()
         self._registrar_zombie_cleanup()
+        self._registrar_descubrimiento_diario()
         self.scheduler.start()
         logger.info("IngestionScheduler started with %d jobs", len(self.scheduler.get_jobs()))
+
+    def _registrar_descubrimiento_diario(self) -> None:
+        """Cada día a las 03:00 UTC, corre scrapers para encolar URLs nuevas.
+
+        El worker `*/10` después procesará la cola con sus caps de costo.
+        Crecimiento orgánico continuo sin intervención manual.
+        """
+        self.scheduler.add_job(
+            self._descubrir_continuo,
+            trigger=CronTrigger.from_crontab("0 3 * * *", timezone="UTC"),
+            id="discovery:daily",
+            name="daily URL discovery",
+            replace_existing=True,
+            misfire_grace_time=3600,
+            coalesce=True,
+            max_instances=1,
+        )
+
+    async def _descubrir_continuo(self) -> None:
+        """Corre scrapers SBS/BCRP y encola lo nuevo."""
+        try:
+            from src.ingestion.scrapers.sbs import descubrir_sbs
+            from src.ingestion.scrapers.bcrp import descubrir_bcrp
+
+            insertados_total = 0
+            for nombre, descubrir, kwargs in [
+                ("SBS", descubrir_sbs, {"max_urls": 600, "verify_http": True}),
+                ("BCRP", descubrir_bcrp, {"max_urls": 200, "verify_http": True}),
+            ]:
+                try:
+                    fuentes = await descubrir(**kwargs)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("Discovery %s falló: %s", nombre, exc)
+                    continue
+
+                async with self.pool.connection() as conn:
+                    async with conn.cursor() as cur:
+                        for f in fuentes:
+                            try:
+                                await cur.execute(
+                                    """
+                                    INSERT INTO pending_sources
+                                      (url, name_hint, title_hint, issuer,
+                                       document_type, domain, discovered_by, priority)
+                                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                                    ON CONFLICT (url) DO NOTHING
+                                    """,
+                                    (
+                                        f.url, f.name_hint, f.title_hint, f.issuer,
+                                        f.document_type, f.domain,
+                                        f"discovery_daily:{nombre.lower()}",
+                                        f.priority,
+                                    ),
+                                )
+                                if cur.rowcount > 0:
+                                    insertados_total += 1
+                            except Exception:  # noqa: BLE001
+                                pass
+                logger.info(
+                    "Discovery daily %s: %d descubiertas",
+                    nombre, len(fuentes),
+                )
+            logger.info(
+                "Discovery daily total: %d URLs nuevas encoladas",
+                insertados_total,
+            )
+        except Exception:
+            logger.exception("Falló discovery daily")
 
     def _registrar_zombie_cleanup(self) -> None:
         """Cada 15 min, marca como aborted runs colgados > 30 min."""
