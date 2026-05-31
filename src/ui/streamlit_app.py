@@ -352,7 +352,7 @@ with st.sidebar:
                 st.session_state.historial_chat = []
                 st.rerun()
         with col_y:
-            if st.button("🗑 Chat", use_container_width=True, key="clear_chat",
+            if st.button("🗑 Chat", use_container_width=True, key="clear_chat_sidebar",
                          help="Limpiar conversación (mantiene la sesión)"):
                 st.session_state.historial_chat = []
                 st.rerun()
