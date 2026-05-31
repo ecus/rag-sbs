@@ -110,23 +110,51 @@ if not st.session_state.user_alias:
                     except Exception:  # noqa: BLE001
                         pass
                     st.session_state.user_alias = alias_limpio
-                    # Recuperar memoria de sesiones anteriores
-                    try:
-                        import httpx as _httpx
-                        cliente_tmp = obtener_cliente()
-                        rmem = _httpx.get(
-                            f"{cliente_tmp.base_url}/v1/analytics/user/{alias_limpio}/memory?limit=6",
-                            timeout=5,
-                        )
-                        if rmem.status_code == 200:
-                            mem = rmem.json() or []
-                            if mem:
-                                st.session_state.historial_chat = mem
-                    except Exception:  # noqa: BLE001
-                        pass
+                    # NO cargar memoria automáticamente. Si el alias tiene
+                    # historial, mostrar opción para que el usuario decida.
+                    st.session_state.historial_chat = []
+                    st.session_state.memoria_disponible = None  # se calcula al rerun
                     st.rerun()
                 else:
                     st.warning("Por favor ingrese un alias.")
+        st.stop()
+
+    # Si recién logueó, chequear si tiene historial previo y ofrecer cargarlo
+    if st.session_state.get("memoria_disponible") is None:
+        try:
+            import httpx as _httpx
+            cliente_tmp = obtener_cliente()
+            rmem = _httpx.get(
+                f"{cliente_tmp.base_url}/v1/analytics/user/{st.session_state.user_alias}/memory?limit=6",
+                timeout=5,
+            )
+            if rmem.status_code == 200:
+                st.session_state.memoria_disponible = rmem.json() or []
+            else:
+                st.session_state.memoria_disponible = []
+        except Exception:  # noqa: BLE001
+            st.session_state.memoria_disponible = []
+
+    memoria_dispo = st.session_state.memoria_disponible or []
+    n_turnos = sum(1 for m in memoria_dispo if m.get("rol") == "user")
+    if memoria_dispo and not st.session_state.get("memoria_decidida"):
+        st.info(
+            f"📚 Encontré **{n_turnos} consulta(s) anteriores** para "
+            f"**{st.session_state.user_alias}**. ¿Cargarlas como memoria?"
+        )
+        col_m1, col_m2 = st.columns(2)
+        with col_m1:
+            if st.button(f"📚 Sí, cargar {n_turnos} consulta(s)",
+                         use_container_width=True, type="primary"):
+                st.session_state.historial_chat = memoria_dispo
+                st.session_state.memoria_decidida = True
+                st.toast("Memoria cargada", icon="✅")
+                st.rerun()
+        with col_m2:
+            if st.button("🆕 No, empezar limpio",
+                         use_container_width=True):
+                st.session_state.memoria_decidida = True
+                st.rerun()
         st.stop()
 
 
@@ -249,8 +277,12 @@ def _procesar_streaming(
         respuesta_final = "".join(texto_acumulado)
         sin_evidencia = _es_respuesta_sin_evidencia(respuesta_final)
 
+        # Detectar NIVEL B (clarificación) además de NIVEL A
+        es_clarif_b = respuesta_final.strip().lower().startswith(
+            ("encontré información", "encontre información")
+        ) or "¿podría especificar" in respuesta_final.lower()
+
         if sin_evidencia:
-            # Panel prominente en lugar del texto plano + ocultar contradicciones
             placeholder_texto.markdown(
                 panel_sin_evidencia(n_fuentes=len(fuentes_recibidas or [])),
                 unsafe_allow_html=True
@@ -261,6 +293,43 @@ def _procesar_streaming(
                 unsafe_allow_html=True,
             )
         status.update(label="✓ Listo", state="complete", expanded=False)
+
+        # Botón "Probar de otra forma" cuando la respuesta es SIN o B (parcial)
+        if (sin_evidencia or es_clarif_b) and consulta_input:
+            with st.container():
+                st.markdown(
+                    '<div style="background:#fef9c3;border:1px solid #facc15;'
+                    'border-radius:8px;padding:10px 12px;margin:8px 0;'
+                    'font-size:13px;color:#854d0e;">'
+                    '🔄 ¿Quieres que intente <b>otra estrategia de búsqueda</b>? '
+                    'Activamos Grafo + Saltos 2 + sinónimos regulatorios y '
+                    'reformulamos la pregunta automáticamente.'
+                    '</div>',
+                    unsafe_allow_html=True,
+                )
+                if st.button("🔁 Probar de otra forma", type="primary",
+                             use_container_width=False,
+                             key=f"retry_{hash(consulta_input)}"):
+                    sinonimos_map = {
+                        "RCD": "Reporte Crediticio de Deudores Anexo 6",
+                        "PDD": "Probabilidad de incumplimiento crediticio",
+                        "patrimonio": "patrimonio efectivo capital regulatorio",
+                        "provisión": "provisiones genéricas específicas categoría riesgo",
+                        "fideicomiso": "fideicomiso patrimonio fideicometido SPV",
+                        "registro": "asiento contable cuenta cuentas afectadas",
+                    }
+                    consulta_enriquecida = consulta_input
+                    for term, syn in sinonimos_map.items():
+                        if term.lower() in consulta_input.lower():
+                            consulta_enriquecida = f"{consulta_input} (también: {syn})"
+                            break
+                    # Forzar toggles para esta consulta
+                    st.session_state.chat_graph = True
+                    st.session_state.chat_hops = 1  # Saltos=2 (index 1)
+                    st.session_state.chat_agente = True
+                    st.session_state.consulta_pendiente = consulta_enriquecida
+                    st.toast("🔁 Reintentando con grafo + sinónimos", icon="✨")
+                    st.rerun()
 
         # Metricas top
         if metadata_final:
@@ -726,6 +795,47 @@ with tab_chat:
         consulta_input = st.chat_input("Escribe tu consulta regulatoria…")
         if consulta_input:
             pregunta = consulta_input
+
+    # ===== Detector de acrónimos ambiguos (interceptor) =====
+    if pregunta and consulta_input:
+        try:
+            from src.agents.acronyms import detectar as _detectar_acronimos
+            ambiguedades = _detectar_acronimos(pregunta)
+        except Exception:  # noqa: BLE001
+            ambiguedades = []
+
+        if ambiguedades and not st.session_state.get("acronimo_resuelto"):
+            st.session_state.pregunta_pendiente_acronimo = pregunta
+            st.warning(
+                f"⚠️ Detecté **{len(ambiguedades)} acrónimo(s) ambiguo(s)** en tu pregunta. "
+                f"¿A cuál te referís?"
+            )
+            for amb in ambiguedades:
+                st.markdown(f"**Para `{amb['sigla']}` elegí una opción:**")
+                for op in amb["opciones"]:
+                    label = f"**{op['significado']}** — {op['contexto']}"
+                    if op.get("norma_principal"):
+                        label += f" · _{op['norma_principal']}_"
+                    if st.button(label, key=f"acro_{amb['sigla']}_{op['significado'][:20]}",
+                                 use_container_width=True):
+                        # Reemplazar la sigla con su forma extendida
+                        pregunta_extendida = pregunta.replace(
+                            amb["sigla"],
+                            f"{amb['sigla']} ({op['significado']})",
+                            1,
+                        )
+                        st.session_state.consulta_pendiente = pregunta_extendida
+                        st.session_state.acronimo_resuelto = True
+                        st.rerun()
+                if st.button(f"➡️ Continuar tal cual (`{amb['sigla']}` sin elegir)",
+                             key=f"acro_{amb['sigla']}_skip"):
+                    st.session_state.acronimo_resuelto = True
+                    st.session_state.consulta_pendiente = pregunta
+                    st.rerun()
+            st.stop()
+
+        # Reset flag para próxima consulta
+        st.session_state.acronimo_resuelto = False
 
     if pregunta:
         # Si NO viene de un planner previo, registrar como turno user
