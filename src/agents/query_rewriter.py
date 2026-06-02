@@ -79,6 +79,33 @@ CONSULTA: clasificación del deudor según días de atraso
 
 ---
 
+HISTORIAL:
+user: cómo se contabilizan los ingresos de créditos reprogramados y refinanciados
+assistant: [explica las cuentas contables de ingresos por intereses devengados]
+
+CONSULTA: dame un ejemplo
+→ {"rewritten": "dame un ejemplo de cómo se contabilizan los ingresos de créditos reprogramados y refinanciados", "was_rewritten": true, "reason": "petición de ejemplo del tema previo (ingresos de créditos reprogramados)"}
+
+---
+
+HISTORIAL:
+user: qué es la provisión procíclica
+assistant: [explica la provisión procíclica]
+
+CONSULTA: explícame más / amplía / dame más detalles
+→ {"rewritten": "explícame con más detalle qué es la provisión procíclica", "was_rewritten": true, "reason": "petición de ampliación del tema previo"}
+
+---
+
+HISTORIAL:
+user: qué dice el Manual de Contabilidad sobre titulización
+assistant: [habla de cuenta 8406 Cartera Transferida]
+
+CONSULTA: y la fórmula del cálculo
+→ {"rewritten": "fórmula del cálculo contable en la cuenta 8406 Cartera Transferida del Manual de Contabilidad SBS", "was_rewritten": true, "reason": "elipsis: 'fórmula del cálculo' refiere al tema contable de titulización"}
+
+---
+
 HISTORIAL (últimos turnos):
 {historial}
 
@@ -124,45 +151,61 @@ def _extraer_json(texto: str) -> dict | None:
 def _es_query_autocontenida(consulta: str) -> bool:
     """Detecta si la consulta NO depende del historial conversacional.
 
-    Heurísticas que sugieren autocontención:
-    - No empieza con conector de continuación ("y", "y para", "y si",
-      "entonces", "ahora")
-    - No contiene pronombres demostrativos sueltos ("eso", "ese", "aquello",
-      "este caso")
-    - Mide >= 20 caracteres (queries cortas dependen casi siempre del contexto)
-    - Contiene algún sustantivo regulatorio clave (acrónimo, número de
-      resolución, nombre de norma)
+    Devuelve True solo cuando podemos afirmar con alta confianza que la
+    consulta es independiente del contexto previo. Caso de duda → False
+    (mejor pasar por el rewriter LLM que tiene contexto).
     """
     q = consulta.strip().lower()
     if not q:
         return False
-    if len(q) < 20:
-        return False
 
-    # Conectores de continuación al inicio → casi siempre referencia previa
-    inicios_dependientes = (
+    # ❌ NUNCA autocontenidas: patrones que SIEMPRE requieren contexto previo
+    patrones_continuacion = (
+        # Conectores de continuación
         "y ", "y, ", "y para", "y si", "y entonces", "y qué",
         "entonces ", "ahora ", "luego ", "después ",
         "y respecto", "y sobre", "qué pasa con",
+        # Solicitudes que dependen del tema previo
+        "dame un ejemplo", "dame ejemplo", "dame otro",
+        "ponme un ejemplo", "muestra un ejemplo", "muéstrame",
+        "explícame", "explicame", "explica eso", "explica más",
+        "más detalles", "más informacion", "más información",
+        "amplía", "amplia", "profundiza", "elabora",
+        "y cómo", "y cuándo", "y por qué", "y dónde",
+        "cuál es la diferencia", "qué diferencia hay",
+        "y la fórmula", "y el cálculo", "haz el cálculo",
+        "haz un caso", "construye un caso", "simula",
+        "resúmelo", "resume", "en pocas palabras",
+        "qué quieres decir", "no entiendo",
     )
-    if q.startswith(inicios_dependientes):
-        return False
+    for pat in patrones_continuacion:
+        if q.startswith(pat) or pat in q[:40]:
+            return False
 
     # Pronombres demostrativos sueltos sin sustantivo claro
     if re.search(r"\b(eso|ese|aquello|esta|este caso|aquí|allí)\b", q) and \
        not re.search(r"\b(ley|res\b|resoluci[oó]n|art[ií]culo|cuenta|circular)\b", q):
         return False
 
-    # Si tiene una entidad regulatoria clara → autocontenida
+    # Queries muy cortas (< 30 chars) sin entidad regulatoria fuerte →
+    # casi siempre dependen de contexto previo
+    if len(q) < 30 and not re.search(
+        r"\b(resoluci[oó]n\s+\w+\s+\d|ley\s+\d|art[ií]culo\s+\d|"
+        r"sbs\s+\d|bcrp|cuenta\s+\d|\d{3,5}-\d{4})\b", q,
+    ):
+        return False
+
+    # ✅ Autocontenida si tiene una entidad regulatoria clara
     if re.search(
-        r"\b(res\b|resoluci[oó]n|ley|art[ií]culo|cap[ií]tulo|anexo|"
+        r"\b(res\b|resoluci[oó]n|ley\s+\d|art[ií]culo\s+\d|cap[ií]tulo|anexo|"
         r"circular|reglamento|decreto|sbs|bcrp|smv|sunat|indecopi|mef|"
         r"\d{3,5}-\d{4})\b",
         q,
     ):
         return True
 
-    return True  # default: tratamos como autocontenida
+    # En duda: NO autocontenida (más seguro usar contexto si lo hay)
+    return False
 
 
 async def reescribir_consulta(
