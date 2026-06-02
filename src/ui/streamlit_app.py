@@ -1443,7 +1443,7 @@ with tab_runs:
                     "Tipo": it.get("document_type", "—"),
                     "Nombre": (it.get("metadata") or {}).get("title", it["name"])[:80],
                     "Dominio": it.get("domain", "—"),
-                    "Año": (it.get("metadata") or {}).get("year", "—"),
+                    "Año": str((it.get("metadata") or {}).get("year") or "—"),
                 }
                 for it in items
             ])
