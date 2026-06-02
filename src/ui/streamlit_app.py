@@ -294,6 +294,25 @@ def _procesar_streaming(
             )
         status.update(label="✓ Listo", state="complete", expanded=False)
 
+        # Detector de respuesta truncada: termina sin signo de cierre claro
+        # (sin punto final, sin '.', con ** abierto, o cortada en lista numerada)
+        respuesta_trim = respuesta_final.rstrip()
+        truncada = bool(respuesta_trim) and (
+            respuesta_trim.endswith(("**", "1.", "2.", "3.", ":")) or
+            (not respuesta_trim.endswith((".", "!", "?", ")", "**.")) and len(respuesta_trim) > 200)
+        )
+        if truncada and consulta_input:
+            st.markdown(
+                '<div style="background:#fff7ed;border:1px solid #fb923c;'
+                'border-radius:8px;padding:10px 12px;margin:8px 0;'
+                'font-size:13px;color:#9a3412;">'
+                '✂️ La respuesta parece <b>cortada</b> por límite de tokens. '
+                'Activá <b>📋 Informe</b> arriba para obtener respuestas extensas, '
+                'o pedí <b>"continuar"</b> en el siguiente turno.'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+
         # Botón "Probar de otra forma" cuando la respuesta es SIN o B (parcial)
         if (sin_evidencia or es_clarif_b) and consulta_input:
             with st.container():

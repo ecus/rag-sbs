@@ -446,7 +446,7 @@ async def query(
         prompt_usuario += "\n" + bloque_calculos
     es_informe = payload.options.report_mode
     sys_prompt = SYSTEM_PROMPT_INFORME if es_informe else SYSTEM_PROMPT
-    max_tokens = 3500 if es_informe else 1024
+    max_tokens = 3500 if es_informe else 2400
     try:
         resultado = await llm.generate(
             prompt_usuario,
@@ -756,7 +756,7 @@ async def query_stream(
                 prompt_usuario += "\n" + bloque_calculos
             es_informe = payload.options.report_mode
             sys_prompt = SYSTEM_PROMPT_INFORME if es_informe else SYSTEM_PROMPT
-            max_tokens = 3500 if es_informe else 1024
+            max_tokens = 3500 if es_informe else 2400
 
             texto_completo = []
             async for chunk in llm.generate_stream(
