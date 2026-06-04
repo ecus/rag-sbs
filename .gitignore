@@ -47,3 +47,12 @@ reports/
 # Local-only
 docker-compose.override.yml
 podman-compose.override.yml
+
+# Secretos / credenciales
+keys
+keys*.md
+*.pem
+*.key
+secrets/
+.env
+.env.*
