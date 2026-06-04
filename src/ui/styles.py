@@ -819,11 +819,30 @@ def badge_via(via: str) -> str:
 
 
 def badge_confianza(nivel: str, respuesta_texto: str | None = None) -> str:
-    """Renderiza badge de confianza.
+    """Renderiza badge de confianza honesto.
 
-    Si la respuesta indica que el modelo no tiene evidencia, sobrescribe
-    el nivel para mostrar SIN EVIDENCIA en lugar de un nivel contradictorio.
+    Niveles soportados:
+    - 'alta' / 'media' / 'baja' (basados en retrieval score)
+    - 'sin_evidencia' (LLM dijo NIVEL A)
+    - 'parcial' (LLM pidió clarificación, NIVEL B)
     """
+    # Override por el backend (nivel ya resuelto)
+    if nivel == "sin_evidencia":
+        return (
+            '<span class="conf-badge" '
+            'style="background:#fef3c7;color:#92400e;'
+            'border:1px solid #fbbf24;padding:2px 10px;border-radius:10px;'
+            'font-size:11px;font-weight:600;">SIN EVIDENCIA</span>'
+        )
+    if nivel == "parcial":
+        return (
+            '<span class="conf-badge" '
+            'style="background:#dbeafe;color:#1e40af;'
+            'border:1px solid #60a5fa;padding:2px 10px;border-radius:10px;'
+            'font-size:11px;font-weight:600;">EVIDENCIA PARCIAL</span>'
+        )
+
+    # Fallback: detección a posteriori del texto (compat con código viejo)
     if respuesta_texto:
         texto_lower = respuesta_texto.lower()
         sin_evidencia_keywords = (

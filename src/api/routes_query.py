@@ -83,26 +83,48 @@ REGLAS INVIOLABLES:
     incluyan conceptos del turno previo si la pregunta actual NO los
     menciona. Usá ejemplos genéricos del tema actual.
 
-⭐ MANEJO DE EVIDENCIA INSUFICIENTE — TRES NIVELES:
+⭐ MANEJO DE EVIDENCIA — PRIORIDAD: SINTETIZÁ ANTES DE CLARIFICAR
 
-NIVEL A — Sin evidencia alguna (los fragmentos no mencionan el tema):
+🔥 REGLA PRINCIPAL: si los fragmentos contienen TÉRMINOS, CUENTAS, DEFINICIONES,
+DINÁMICAS o PROCEDIMIENTOS relacionados con la pregunta, **CONSTRUÍ una respuesta
+sintetizando esa información**. NO uses "no tengo evidencia" ni saltes a NIVEL B
+si tenés piezas para armar la respuesta.
+
+NIVEL A — Sin evidencia alguna (USAR SOLO si los fragmentos NO mencionan NI EL
+TEMA NI CONCEPTOS RELACIONADOS):
 - Responde literalmente: "No tengo evidencia suficiente para responder con certeza."
 
-NIVEL B — Evidencia parcial pero el tema específico de la pregunta NO aparece:
-- En lugar de decir "sin evidencia", **describe brevemente qué encontró** en el
-  contexto y **formula 2-3 preguntas de clarificación específicas** para que el
-  usuario refine. Formato OBLIGATORIO:
+NIVEL B — Solo cuando la información es REALMENTE periférica (ej. encontraste
+fragmentos del Pasivo cuando preguntan sobre titulización del Activo):
+- Describe lo encontrado + 2-3 preguntas concretas de clarificación.
 
-  "Encontré información relacionada en el corpus pero no responde directamente
-  a su consulta. Específicamente, los fragmentos mencionan [TEMA REAL ENCONTRADO,
-  ej. 'cuentas del Pasivo Clase 2: 2101 Obligaciones a la Vista, 2102...'] [Fuente N].
+NIVEL C — DEFAULT: Sintetizá la respuesta usando lo que encontraste, aunque
+no sea perfecto. Está OK decir "según el Manual de Contabilidad [Fuente N],
+los intereses devengados se reconocen como ingreso cuando..." aunque la
+definición no esté literal en el fragmento.
 
-  Para responder con precisión, ¿podría especificar:
-  1. [Pregunta concreta 1 — ej. el capítulo del Manual donde aplica esta operación]?
-  2. [Pregunta concreta 2 — ej. la resolución vigente que regula esta modalidad]?
-  3. [Pregunta concreta 3 — ej. el aspecto específico de interés: registro/dinámica/provisiones]?"
+🎓 EJEMPLOS DIDÁCTICOS CON NÚMEROS HIPOTÉTICOS — PERMITIDOS:
+- Si el usuario pide "ejemplo con importes" o "caso didáctico", podés usar
+  números hipotéticos SIEMPRE QUE los marques como `(ejemplo hipotético)`,
+  `(caso ilustrativo)` o uses montos redondos didácticos (ej. S/ 100,000).
+- La regla "NUNCA inventes números" aplica a TASAS REGULATORIAS, PORCENTAJES
+  DE PROVISIÓN, FACTORES DE PONDERACIÓN, LÍMITES — no a montos didácticos
+  para construir un ejemplo.
+- Estructura recomendada del ejemplo:
+  1. Escenario: "Supongamos un crédito de S/ 100,000 (ejemplo hipotético)..."
+  2. Aplicación de la regla regulatoria (con cita a [Fuente N])
+  3. Asientos contables o cálculo paso a paso
+  4. Resultado con interpretación normativa
 
-NIVEL C — Evidencia suficiente: responde normalmente con citas.
+🧩 PREGUNTAS CONCEPTUALES ("qué es X", "definición de Y", "diferencia entre A y B"):
+- NO requieren cita literal de un PDF con esa definición.
+- Construí la respuesta a partir del USO del concepto en los fragmentos
+  (cuentas que lo aplican, dinámica que lo describe).
+- Ej. si preguntan "qué son ingresos devengados" y los fragmentos hablan
+  de "subcuenta 2901.02 Ingresos cobrados por anticipado que NO están
+  devengados", podés inferir y explicar: "ingresos devengados son aquellos
+  cuya prestación ya se realizó y por tanto se reconocen como ingreso del
+  período, a diferencia de los cobrados por anticipado [Fuente N]".
 
 EJEMPLO DE NIVEL B (titulización sin contexto suficiente):
 > Encontré información del Manual de Contabilidad SBS, pero los fragmentos
@@ -282,10 +304,7 @@ def _construir_prompt_usuario(pregunta: str, fragmentos: list) -> str:
 
 
 def _confianza_segun_puntajes(fragmentos: list, umbral: float = 0.7) -> str:
-    """Heurística simple: confianza basada en score del top chunk.
-
-    Sprint 2: lo reemplaza el agente auditor con verificación de citas.
-    """
+    """Heurística basada en score del top chunk."""
     if not fragmentos:
         return "baja"
     puntaje_top = fragmentos[0].vector_score or fragmentos[0].score
@@ -294,6 +313,35 @@ def _confianza_segun_puntajes(fragmentos: list, umbral: float = 0.7) -> str:
     if puntaje_top >= 0.5:
         return "media"
     return "baja"
+
+
+def _confianza_final(fragmentos: list, respuesta_texto: str) -> str:
+    """Confianza honesta: combina retrieval score con calidad de respuesta.
+
+    Si la respuesta admite "no tengo evidencia" o solicita clarificación
+    (NIVEL A/B), bajamos la confianza independientemente del retrieval —
+    porque el LLM efectivamente NO respondió la consulta del usuario.
+    """
+    base = _confianza_segun_puntajes(fragmentos)
+    if not respuesta_texto:
+        return base
+
+    t = respuesta_texto.strip().lower()
+
+    # NIVEL A: el LLM declaró que no hay evidencia → confianza baja real
+    if any(k in t for k in (
+        "no tengo evidencia suficiente",
+        "no encuentro evidencia",
+        "no hay evidencia suficiente",
+    )):
+        return "sin_evidencia"
+
+    # NIVEL B: el LLM pidió clarificación en lugar de responder → media-baja
+    if t.startswith(("encontré información", "encontre información")) and \
+       "¿podría especificar" in t:
+        return "parcial"
+
+    return base
 
 
 @router.post("/v1/query", response_model=QueryResponse)
@@ -482,11 +530,11 @@ async def query(
             )
         )
 
-    confianza = _confianza_segun_puntajes(fragmentos)
+    confianza = _confianza_final(fragmentos, resultado.text)
     avisos: list[str] = []
     if not fragmentos:
         avisos.append("No se recuperó ningún chunk con la query.")
-    if confianza == "baja":
+    if confianza in ("baja", "sin_evidencia"):
         avisos.append("Confianza baja — recomendable validación humana.")
 
     latencia_ms = (time.perf_counter() - inicio) * 1000
@@ -770,7 +818,7 @@ async def query_stream(
 
             # Metadata final
             respuesta_final = "".join(texto_completo)
-            confianza = _confianza_segun_puntajes(fragmentos)
+            confianza = _confianza_final(fragmentos, respuesta_final)
             latencia_ms = (time.perf_counter() - inicio) * 1000
             yield _sse("metadata", {
                 "trace_id": str(trace_id),
