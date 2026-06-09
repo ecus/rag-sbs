@@ -125,7 +125,7 @@ if not st.session_state.user_alias:
             import httpx as _httpx
             cliente_tmp = obtener_cliente()
             rmem = _httpx.get(
-                f"{cliente_tmp.base_url}/v1/analytics/user/{st.session_state.user_alias}/memory?limit=6",
+                f"{cliente_tmp.base_url}/v1/analytics/user/{st.session_state.user_alias}/memory?limit=20",
                 timeout=5,
             )
             if rmem.status_code == 200:

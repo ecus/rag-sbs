@@ -114,19 +114,21 @@ CONSULTA ACTUAL: {consulta}
 JSON:"""
 
 
-def _formatear_historial(historial: list[dict], max_turnos: int = 3) -> str:
-    """Renderiza los últimos N turnos en formato user/assistant."""
+def _formatear_historial(historial: list[dict], max_turnos: int = 10) -> str:
+    """Renderiza los últimos N turnos en formato user/assistant.
+
+    Plan C: 10 turnos (era 3), 1500 chars/mensaje (era 400).
+    """
     if not historial:
         return "(vacío)"
-    # Tomamos los últimos max_turnos pares (user+assistant)
     ultimos = historial[-(max_turnos * 2):]
     lineas = []
     for m in ultimos:
         rol = "user" if m.get("role") == "user" else "assistant"
         contenido = (m.get("content") or "").strip()
-        # Truncar respuestas largas para no inflar el prompt
-        if len(contenido) > 400:
-            contenido = contenido[:400] + "…"
+        # Truncado más generoso para preservar definiciones largas
+        if len(contenido) > 1500:
+            contenido = contenido[:1500] + "…"
         lineas.append(f"{rol}: {contenido}")
     return "\n".join(lineas)
 

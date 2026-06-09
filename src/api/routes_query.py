@@ -358,6 +358,21 @@ async def query(
     historial_dicts = [m.model_dump() for m in payload.history]
     rewrite_info: dict | None = None
     consulta_efectiva = payload.query
+
+    # 0.5 Filtro de relevancia semántica de turnos previos (Plan C)
+    if historial_dicts and len(historial_dicts) >= 2:
+        try:
+            from src.agents.memory_relevance import seleccionar_turnos_relevantes
+            historial_dicts, mem_telemetria = await seleccionar_turnos_relevantes(
+                payload.query, historial_dicts, llm,
+                umbral_relevancia=0.55,
+                max_turnos_relevantes=6,
+                siempre_incluir_ultimos=1,
+            )
+            logger.info("Memory filter: %s", mem_telemetria)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Memory filter falló: %s — usando historial sin filtrar", exc)
+
     if historial_dicts:
         rewrite_info = await reescribir_consulta(payload.query, historial_dicts, llm)
         if rewrite_info["was_rewritten"]:
@@ -407,7 +422,7 @@ async def query(
         # darle más material al reranker. Si rerank=false usamos top 7 directo.
         candidatos, vias_candidatos = fusionar_y_rankear(
             fragmentos_vec, fragmentos_exp,
-            top_k_final=18 if payload.options.rerank_enabled else 7,
+            top_k_final=25 if payload.options.rerank_enabled else 10,
         )
         fragmentos, vias_por_fragmento = candidatos, vias_candidatos
     else:
@@ -420,7 +435,7 @@ async def query(
     # 2.6 LLM-based reranking (feature flag, default ON)
     if payload.options.rerank_enabled and len(fragmentos) > 1:
         fragmentos, vias_por_fragmento = await rerank_con_vias(
-            llm, payload.query, fragmentos, vias_por_fragmento, top_k=7
+            llm, payload.query, fragmentos, vias_por_fragmento, top_k=10
         )
 
     # 2.65 Filtro temático determinista — evita que chunks de Patrimonio Efectivo
@@ -494,7 +509,7 @@ async def query(
         prompt_usuario += "\n" + bloque_calculos
     es_informe = payload.options.report_mode
     sys_prompt = SYSTEM_PROMPT_INFORME if es_informe else SYSTEM_PROMPT
-    max_tokens = 6000 if es_informe else 4000
+    max_tokens = 8000 if es_informe else 6000
     try:
         resultado = await llm.generate(
             prompt_usuario,
@@ -656,6 +671,22 @@ async def query_stream(
             # 0. Reescritura por memoria conversacional (si hay historial)
             historial_dicts = [m.model_dump() for m in payload.history]
             consulta_efectiva = payload.query
+
+            # 0.5 Filtro semántico de turnos relevantes (Plan C)
+            if historial_dicts and len(historial_dicts) >= 2:
+                try:
+                    from src.agents.memory_relevance import seleccionar_turnos_relevantes
+                    yield _sse("status", {"step": "memory_filter"})
+                    historial_dicts, mem_telemetria = await seleccionar_turnos_relevantes(
+                        payload.query, historial_dicts, llm,
+                        umbral_relevancia=0.55,
+                        max_turnos_relevantes=6,
+                        siempre_incluir_ultimos=1,
+                    )
+                    yield _sse("memory_filter", mem_telemetria)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("Memory filter falló en stream: %s", exc)
+
             if historial_dicts:
                 yield _sse("status", {"step": "rewrite"})
                 rewrite_info = await reescribir_consulta(payload.query, historial_dicts, llm)
@@ -698,7 +729,7 @@ async def query_stream(
                 )
                 fragmentos, vias_por_fragmento = fusionar_y_rankear(
                     fragmentos_vec, fragmentos_exp,
-                    top_k_final=18 if payload.options.rerank_enabled else 7,
+                    top_k_final=25 if payload.options.rerank_enabled else 10,
                 )
                 if telemetria_grafo:
                     yield _sse("graph", telemetria_grafo)
@@ -711,7 +742,7 @@ async def query_stream(
             if payload.options.rerank_enabled and len(fragmentos) > 1:
                 yield _sse("status", {"step": "rerank"})
                 fragmentos, vias_por_fragmento = await rerank_con_vias(
-                    llm, consulta_efectiva, fragmentos, vias_por_fragmento, top_k=7
+                    llm, consulta_efectiva, fragmentos, vias_por_fragmento, top_k=10
                 )
 
             # Filtro temático determinista (anti-contaminación entre regulaciones)
@@ -804,7 +835,7 @@ async def query_stream(
                 prompt_usuario += "\n" + bloque_calculos
             es_informe = payload.options.report_mode
             sys_prompt = SYSTEM_PROMPT_INFORME if es_informe else SYSTEM_PROMPT
-            max_tokens = 6000 if es_informe else 4000
+            max_tokens = 8000 if es_informe else 6000
 
             texto_completo = []
             async for chunk in llm.generate_stream(
