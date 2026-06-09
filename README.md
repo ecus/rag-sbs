@@ -332,7 +332,7 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
 | [`docs/casos-de-uso.md`](docs/casos-de-uso.md) | Casos demo end-to-end |
 | [`docs/regulatorio.md`](docs/regulatorio.md) | Mapeo del corpus regulatorio |
 
-🌐 Documentación web: [eurrutia.github.io/rag-sbs](https://eurrutia.github.io/rag-sbs)
+🌐 Documentación web: [ecus.github.io/rag-sbs](https://ecus.github.io/rag-sbs)
 
 ---
 
