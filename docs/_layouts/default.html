@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% if page.title %}{{ page.title | escape }} · {% endif %}{{ site.title | escape }}</title>
+  <meta name="description" content="{{ page.description | default: site.description | strip_html | strip_newlines | truncate: 200 }}">
+
+  <link rel="stylesheet" href="{{ '/assets/css/style.css?v=' | append: site.github.build_revision | relative_url }}">
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="{{ page.title | default: site.title }}">
+  <meta property="og:description" content="{{ page.description | default: site.description }}">
+  <meta property="og:type" content="website">
+
+  <style>
+    /* Mejoras visuales sobre Cayman */
+    body { font-size: 17px; line-height: 1.75; }
+    .main-content { max-width: 70rem; }
+    .main-content h1, .main-content h2 {
+      border-bottom: 2px solid #eaecef;
+      padding-bottom: 0.3em;
+      margin-top: 2em;
+    }
+    .main-content h3 { margin-top: 1.5em; color: #003d7a; }
+    .main-content table {
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+      border-radius: 8px;
+      overflow: hidden;
+      margin: 1.5em 0;
+    }
+    .main-content table th {
+      background: linear-gradient(180deg, #003d7a, #0656a5);
+      color: white;
+      border: none;
+    }
+    .main-content table tr:nth-child(even) { background: #f8fafc; }
+    .main-content blockquote {
+      border-left: 4px solid #003d7a;
+      background: #f0f4f8;
+      padding: 14px 18px;
+      border-radius: 0 8px 8px 0;
+      margin: 1em 0;
+    }
+    .main-content code:not(.language-mermaid) {
+      background: rgba(27,31,35,0.07);
+      padding: 0.2em 0.4em;
+      border-radius: 3px;
+      font-size: 0.9em;
+    }
+    .mermaid {
+      text-align: center;
+      margin: 32px auto;
+      padding: 20px;
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+      overflow-x: auto;
+    }
+    .mermaid svg { max-width: 100%; height: auto; }
+
+    /* Header hero */
+    .page-header {
+      background: linear-gradient(135deg, #003d7a 0%, #0656a5 100%);
+      padding: 4rem 1rem;
+    }
+    .project-name { font-size: 2.5rem; }
+    .project-tagline { font-size: 1.2rem; opacity: 0.95; }
+  </style>
+</head>
+<body>
+  <section class="page-header">
+    <h1 class="project-name">{{ site.title | default: site.github.repository_name }}</h1>
+    <h2 class="project-tagline">{{ site.description | default: site.github.project_tagline }}</h2>
+    {% if site.github.is_project_page %}
+      <a href="{{ site.github.repository_url }}" class="btn">📦 View on GitHub</a>
+    {% endif %}
+  </section>
+
+  <section class="main-content">
+    {{ content }}
+
+    {% if site.github.is_project_page %}
+      <footer class="site-footer">
+        <span class="site-footer-owner">
+          <a href="{{ site.github.repository_url }}">{{ site.github.repository_name }}</a>
+          is maintained by <a href="{{ site.github.owner_url }}">{{ site.github.owner_name }}</a>.
+        </span>
+      </footer>
+    {% endif %}
+  </section>
+
+  <!-- Mermaid v11 — convierte bloques ```mermaid en SVG -->
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    // Convertir bloques de código mermaid antes de inicializar
+    const blocks = document.querySelectorAll('pre code.language-mermaid');
+    blocks.forEach((block, idx) => {
+      // El texto puede tener entities HTML (<br/> → &lt;br/&gt;) — los pasamos como text
+      const code = block.textContent;
+      const div = document.createElement('div');
+      div.className = 'mermaid';
+      div.textContent = code;
+      const pre = block.closest('pre');
+      pre.parentNode.replaceChild(div, pre);
+    });
+
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'default',
+      themeVariables: {
+        primaryColor: '#003d7a',
+        primaryTextColor: '#fff',
+        primaryBorderColor: '#003d7a',
+        lineColor: '#5a6c7d',
+        secondaryColor: '#f97316',
+        tertiaryColor: '#10b981'
+      },
+      flowchart: { useMaxWidth: true, htmlLabels: true, curve: 'basis' },
+      sequence: { useMaxWidth: true, actorMargin: 50 },
+      er: { useMaxWidth: true },
+      gantt: { useMaxWidth: true },
+      mindmap: { useMaxWidth: true }
+    });
+
+    await mermaid.run({ querySelector: '.mermaid' });
+  </script>
+</body>
+</html>
