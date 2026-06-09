@@ -1,0 +1,60 @@
+<!-- Mermaid diagrams support -->
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'default',
+    flowchart: { useMaxWidth: true, htmlLabels: true, curve: 'basis' },
+    sequence: { useMaxWidth: true, actorMargin: 50 },
+    er: { useMaxWidth: true },
+    gantt: { useMaxWidth: true }
+  });
+
+  // Convert ```mermaid code blocks (Kramdown wraps them in <pre><code class="language-mermaid">)
+  document.addEventListener('DOMContentLoaded', () => {
+    const blocks = document.querySelectorAll('pre code.language-mermaid, pre > code.language-mermaid');
+    blocks.forEach((block, idx) => {
+      const code = block.textContent;
+      const container = document.createElement('div');
+      container.className = 'mermaid';
+      container.id = `mermaid-${idx}`;
+      container.textContent = code;
+      block.closest('pre').replaceWith(container);
+    });
+    mermaid.run();
+  });
+</script>
+
+<style>
+  .mermaid { text-align: center; margin: 24px 0; }
+  .mermaid svg { max-width: 100%; height: auto; }
+
+  /* Mejoras visuales generales para los docs */
+  .page-content { line-height: 1.7; }
+  .page-content h1, .page-content h2, .page-content h3 {
+    border-bottom: 2px solid #eaecef;
+    padding-bottom: 0.3em;
+  }
+  .page-content table {
+    display: table;
+    width: 100%;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .page-content table th {
+    background: #f6f8fa;
+  }
+  .page-content blockquote {
+    border-left: 4px solid #0366d6;
+    background: #f6f8fa;
+    padding: 12px 16px;
+    border-radius: 0 6px 6px 0;
+  }
+  .page-content code:not(.language-mermaid) {
+    background: rgba(27,31,35,0.07);
+    padding: 0.2em 0.4em;
+    border-radius: 3px;
+    font-size: 0.9em;
+  }
+</style>

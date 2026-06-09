@@ -1,259 +1,425 @@
 ---
 title: Arquitectura
+description: Diseño técnico del sistema RAG SBS — componentes, pipeline y decisiones
 ---
 
-# Arquitectura técnica (v0.4 — mayo 2026)
+# 🏗️ Arquitectura técnica · v0.5
 
-## Diagrama de componentes
-
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│                          Cliente (Browser)                            │
-└────────────────────────────┬─────────────────────────────────────────┘
-                             │ HTTPS · Let's Encrypt
-                  ┌──────────▼──────────┐
-                  │       Caddy         │ (reverse proxy + auto TLS)
-                  │       :443          │
-                  └──────────┬──────────┘
-                             │
-              ┌──────────────┴──────────────┐
-              │                             │
-       ┌──────▼──────┐               ┌──────▼──────┐
-       │  Streamlit  │ ◄── REST ───► │   FastAPI   │
-       │      UI     │               │   /v1/*     │
-       │    :8501    │               │   :8000     │
-       └─────────────┘               └──┬──────┬───┘
-                                        │      │
-                          ┌─────────────┘      └──────────────┐
-                          │                                   │
-                  ┌───────▼──────────┐               ┌────────▼──────┐
-                  │   PostgreSQL     │               │     Redis     │
-                  │   + pgvector     │               │  (sem cache)  │
-                  │   :5432          │               │    :6379      │
-                  └──┬───────────────┘               └───────────────┘
-                     │
-                     ├── documents, chunks, embeddings
-                     ├── doc_sources, ingestion_runs, change_events
-                     ├── graph_nodes, graph_edges
-                     ├── pending_sources, cost_tracker, background_config
-                     └── user_sessions, query_log
-                          ▲
-                          │
-                  ┌───────┴────────┐
-                  │  APScheduler   │ in-process: */10 worker, */15 zombies,
-                  │                │ HH:05 graph+topics rebuild
-                  └────────────────┘
-                          │
-                  ┌───────▼────────┐         ┌────────────────┐
-                  │   Gemini API   │         │   Object Store │
-                  │  (LLM + embed) │         │   S3/GCS/local │
-                  └────────────────┘         └────────────────┘
-```
-
-## Pipeline de query (v0.4)
-
-### Fase 1 — Preprocesamiento
-
-1. **Recepción**: `POST /v1/query` o `/v1/query/stream`. Incluye `alias`, `history`, `options`.
-2. **Query rewriter** (LLM corto): si hay historial conversacional, reescribe la consulta para que sea autocontenida.
-   *Ejemplo*: "¿y para consumo?" → "¿cuál es el % de provisión para consumo no revolvente?"
-3. **Embedding**: `gemini-embedding-001` (768d).
-
-### Fase 2 — Retrieval híbrido adaptativo
-
-4. **Query profiler** detecta el tipo de consulta:
-
-| Perfil | Patrón detectado | Pesos RRF |
-|---|---|---|
-| Lexical fuerte | 2+ entidades específicas | w_v=0.6 / w_t=1.4 |
-| Lexical simple | 1 entidad (#res, art°, cuenta) | w_v=0.8 / w_t=1.2 |
-| Semantic | "¿qué/cómo/por qué?" sin entidad | w_v=1.3 / w_t=0.7 |
-| Balanced | sin señal clara | w_v=1.0 / w_t=1.0 |
-
-5. **Hybrid search**:
-   - Vectorial: cosine sobre pgvector index ivfflat/hnsw
-   - Lexical: BM25 vía PostgreSQL `tsvector` + `ts_rank`
-   - **Fusión RRF ponderada**: `score = w_v·1/(k+rank_v) + w_t·1/(k+rank_t)` con k=60
-
-6. **Graph-augmented retrieval** (opcional, flag `expansion_enabled`):
-   - Expande chunks iniciales siguiendo aristas del grafo
-   - Multi-hop configurable (1 o 2 saltos)
-   - Útil para cross-regulación
-
-### Fase 3 — Re-ranking y filtrado
-
-7. **LLM Re-ranker** (default ON):
-   - Toma 18 candidatos del hybrid search
-   - El LLM les asigna scores 0.0–10.0 con 5 niveles de discriminación
-   - Retorna top 7 más relevantes
-   - Telemetría: cuenta chunks que cambiaron de orden
-
-8. **Topic router determinista**:
-   - Detecta keywords → clasifica en `{provisiones, patrimonio_efectivo, tasas_intereses, plaft, ciberseguridad, ...}`
-   - Filtra chunks del tema opuesto (anti-mezcla)
-   - **Re-fetch dirigido**: si el filtro deja vacío, consulta directa filtrando por título
-
-### Fase 4 — Cálculo y generación
-
-9. **Calculator agent** (function calling):
-   - Detecta intención de cálculo (clasificación de deudor, provisiones)
-   - Inyecta valores demo si pide "ejemplo sencillo"
-   - Ejecuta funciones Python deterministas: `clasificar_deudor()`, `calcular_provision()`
-   - NO usa el LLM para los números
-
-10. **Generación final** con SYSTEM_PROMPT estricto + 3 niveles de evidencia:
-
-| Nivel | Cuándo | Output |
-|---|---|---|
-| **A** | Contexto totalmente vacío | "No tengo evidencia suficiente para responder con certeza." |
-| **B** | Contexto parcial relacionado | Describe lo encontrado + 2-3 preguntas de clarificación |
-| **C** | Contexto suficiente | Respuesta directa con `[Fuente N]` y `[Cálculo N]` |
-
-11. **Logging persistente**: query, respuesta, confianza, fuentes top-8, opciones, latencia → `query_log` (si vino con alias).
+> Visión de ingeniería del sistema RAG SBS — qué corre dónde, cómo fluye una query, y por qué se diseñó así.
 
 ---
 
-## Ingestion pipeline
+## 🎯 Objetivos de diseño
 
-### Catálogo curado (manual)
-- `seed_catalog.py`: 413 URLs verificadas en 5 rondas (v1-v5)
-- POST `/v1/ingest/seed` registra en `doc_sources`
-- POST `/v1/ingest/scan` dispara `run_scan(source_filter=...)`
-
-### Worker background (scrapers + queue)
-- `pending_sources` table: cola de URLs descubiertas por scrapers
-- Cron `*/10`: worker tick procesa N URLs, respeta caps:
-  - Cap total: $9.50
-  - Cap diario: $1.50
-  - Max docs total: 2000
-  - Schedule until: 2026-06-01
-- Self-apagado si supera cualquier cap
-
-### Parser (cadena de 3 niveles)
-
-```
-PyMuPDF → texto extraído?
-   ├─ Sí (>50 chars/pág)  → chunker estructural
-   ├─ No                   → pypdf fallback
-   │                        └─ Sigue vacío?
-   │                              ├─ Sí  → OCR Tesseract español (DPI 200, max 30 pág)
-   │                              └─ No  → chunker
-   └─ Error                → pypdf fallback
-```
-
-### Chunker estructural
-- Detecta jerarquía: `Capítulo > Sección > Artículo > Anexo`
-- Crea metadata `section_path`
-- Si cobertura estructural <60% del texto → fallback a chunker recursivo
-- Embedding por chunk + almacenamiento en `chunks` con `tsvector` para BM25
-
-### Self-healing
-- Cron `*/15`: `UPDATE ingestion_runs SET status='aborted' WHERE status='running' AND started_at < NOW() - INTERVAL '30 minutes'`
-- También al startup del API
-- Previene acumulación de zombies (visto 321 en un día sin esto)
-
----
-
-## Knowledge Graph
-
-### Nivel 1 — Citaciones explícitas
-
-Extracción por regex de patrones en chunks:
-- `Res. SBS N° XXX-YYYY`
-- `Ley XXXXX, Art. N`
-- `Anexo N de la Resolución...`
-- `Circular BCRP N°...`
-
-Genera:
-- **Nodos**: `document`, `resolution`, `ley`, `articulo`, `anexo`, `circular`, `topic`
-- **Aristas**: `cites`, `modifies`, `derogates`, `canonical_form`, `topic_member`
-
-### Nivel 2 — Tópicos semánticos
-
-K-means sobre embeddings de chunks (k=15) + naming con LLM. Ejemplos detectados:
-- Tasas de interés de referencia
-- Prevención lavado activos
-- Provisiones de créditos procíclicas
-- Operaciones de reporte BCRP
-- Gobierno corporativo y compliance
-- Auditoría interna
-- TI y ciberseguridad
-- Riesgo de modelo
-
-### Rebuild
-- Cron horario `HH:05`: `reconstruir_completo(pool)` trunca y rearma
-- Tras rebuild, automáticamente `descubrir_topicos()` para mantener consistencia
-
-### Visualización
-- Endpoint `/v1/graph` retorna HTML interactivo (vis-network desde CDN)
-- Parámetros físicos ajustables: espaciado (60-500), repulsión (500-20000), gravedad (0-1)
-- Coloreo por institución emisora (SBS azul, BCRP rojo, Congreso morado, MEF verde, etc.)
-
----
-
-## Capa de analytics y memoria
-
-### Tablas
-- `user_sessions`: alias + created_at + last_seen_at
-- `query_log`: query, answer, confidence, n_sources, latency_ms, options (JSONB), sources_summary (JSONB)
-
-### Endpoints
-- `POST /v1/analytics/session` — registrar alias
-- `GET /v1/analytics/users` — top usuarios con métricas
-- `GET /v1/analytics/user/{alias}/queries` — historial completo
-- `GET /v1/analytics/user/{alias}/memory` — últimas 6 conversaciones (para reconstruir memoria al login)
-
-### Flow
-1. Usuario ingresa alias en la app
-2. UI recupera memoria histórica → la inyecta en `st.session_state.historial_chat`
-3. Cada query incluye el alias en el payload
-4. API loguea en `query_log` con todos los metadatos
-5. Modo técnico expone dashboard de analytics con drill-down por usuario
-
----
-
-## Stack containerizado
-
-`docker-compose.prod.yml`:
-
-| Service | Imagen | Volumen | Puerto |
-|---|---|---|---|
-| `postgres` | pgvector/pgvector:pg16 | pgdata | 5432 |
-| `redis` | redis:7-alpine | - | 6379 |
-| `api` | local Dockerfile (Python 3.11 + Tesseract) | - | 8000 |
-| `ui` | local Dockerfile | - | 8501 |
-| `caddy` | caddy:2-alpine | caddy_data | 80, 443 |
-
-Dockerfile multi-stage:
-- Stage 1 builder: instala todas las deps en `/opt/venv`
-- Stage 2 runtime: copia venv + agrega Tesseract español (~100MB)
-- Imagen final ~350MB
-
----
-
-## Estado actual del corpus (mayo 2026)
-
-| Métrica | Valor |
+| Objetivo | Cómo se logra |
 |---|---|
-| Documentos en BD | ~900 |
-| Chunks vectorizados | ~29,000 |
-| Catálogo curado | 413 URLs verificadas |
-| Instituciones | SBS, BCRP, Congreso, MEF, SMV, SUNAT, INDECOPI, BIS, BID |
-| Manual de Contabilidad SBS | Cap I-IV (vigencias 2024-2026) + Res 895-98 |
-| Knowledge graph | ~1,100 nodos / ~12,000 aristas |
-| Tópicos | 15 áreas temáticas |
-| Costo acumulado Gemini | ~USD 2.50 |
-| Cap restante | USD 7.00 (de USD 9.50) |
+| **Zero alucinación numérica** | Calculator agent con funciones Python deterministas |
+| **Citas verificables** | Hybrid search + reranker + cada fuente vinculada a PDF original |
+| **Anti-mezcla regulatoria** | Topic router determinista basado en keywords |
+| **Bajo costo operativo** | Stack en una VM 2GB · cap de gasto Gemini · scale-to-zero futuro |
+| **Auto-mantenimiento** | Crons que limpian zombies, descubren docs nuevos y rebuildean grafo |
+| **Memoria sin sesgo** | Filtro semántico de turnos relevantes vía embeddings |
 
 ---
 
-## Decisiones arquitectónicas registradas (ADRs)
+## 🗺️ Vista de despliegue
 
-- **ADR-001** — Gemini sobre Ollama: latencia + calidad >> costo en escala portafolio
-- **ADR-002** — pgvector sobre Pinecone/Weaviate: simplicidad, una sola BD
-- **ADR-003** — APScheduler in-process sobre Celery: stack 5x más simple para 1 worker
-- **ADR-004** — RRF ponderado sobre concatenación simple: documentado en literatura
-- **ADR-005** — LLM reranker sobre cross-encoder local: evita +3GB de sentence-transformers
-- **ADR-006** — Topic router determinista (no agente LLM): zero falsos positivos críticos en separación regulatoria
-- **ADR-007** — Caps de costo hard-coded al worker: presupuesto portafolio limitado
-- **ADR-008** — Self-healing cron sobre supervisión manual: experiencia: 321 zombies/día sin esto
+```mermaid
+graph TB
+    subgraph CLIENT[🌐 Cliente]
+        BR[Browser]
+    end
+
+    subgraph VM["☁️ AWS Lightsail · Ubuntu 22.04 · 2GB RAM"]
+        subgraph EDGE[🔒 Edge]
+            CAD[Caddy<br/>HTTPS · Let's Encrypt]
+        end
+
+        subgraph FE[📱 Frontend]
+            UI[Streamlit UI<br/>:8501<br/>400MB RAM]
+        end
+
+        subgraph BE[⚙️ Backend]
+            API[FastAPI<br/>:8000<br/>700MB RAM]
+            SCH[APScheduler<br/>in-process]
+        end
+
+        subgraph DATA[🗄️ Persistencia]
+            PG[(PostgreSQL 16<br/>+ pgvector<br/>600MB RAM)]
+            RD[(Redis 7<br/>150MB)]
+        end
+    end
+
+    subgraph CLOUD[☁️ Externos]
+        GEM[Gemini API<br/>2.5 Flash + embedding-001]
+        S3[(S3 / GCS<br/>PDFs + backups)]
+        GH[GitHub<br/>código + CI/CD]
+    end
+
+    BR -->|HTTPS| CAD
+    CAD --> UI
+    CAD --> API
+    UI <-->|REST + SSE| API
+    API <--> PG
+    API <--> RD
+    API <--> GEM
+    API <--> S3
+    SCH -.->|cron */10| API
+    GH -.->|git pull| VM
+
+    style BR fill:#f97316,color:#fff
+    style CAD fill:#10b981,color:#fff
+    style UI fill:#ff4b4b,color:#fff
+    style API fill:#003d7a,color:#fff
+    style PG fill:#336791,color:#fff
+    style RD fill:#dc382d,color:#fff
+    style GEM fill:#4285f4,color:#fff
+```
+
+---
+
+## 🔬 Pipeline de query — 8 fases detalladas
+
+```mermaid
+flowchart TB
+    Q[💬 Query usuario]:::input --> H{¿historial?}
+
+    H -->|sí| MF[🧠 Fase 0.5<br/>Filtro semántico de turnos]:::new
+    H -->|no| EMB
+    MF -->|turnos relevantes| RW[✏️ Fase 1<br/>Rewriter standalone]
+
+    RW --> EMB[🔢 Fase 2<br/>Embedding consulta]
+    EMB --> QP[🎯 Fase 3<br/>Query Profiler]:::new
+
+    QP -->|lexical fuerte| WP1[w_v=0.6 · w_t=1.4]
+    QP -->|semantic| WP2[w_v=1.3 · w_t=0.7]
+    QP -->|balanced| WP3[w_v=1.0 · w_t=1.0]
+
+    WP1 --> HS[🔍 Fase 4<br/>Hybrid Search + RRF ponderado<br/>25 candidatos]
+    WP2 --> HS
+    WP3 --> HS
+
+    HS --> GR{¿Graph-aug?}
+    GR -->|sí| GE[🕸️ Expansión multi-hop<br/>siguiendo KG]
+    GR -->|no| RK
+    GE --> RK[🏆 Fase 5<br/>LLM Re-ranker<br/>25 → top 10]
+
+    RK --> TR[🚦 Fase 6<br/>Topic Router determinista<br/>anti-mezcla]
+    TR --> CALC[🧮 Fase 7<br/>Calculator Agent<br/>function calling]
+
+    CALC --> SP[💬 Fase 8<br/>Generación LLM<br/>3 niveles de evidencia]
+    SP -->|NIVEL A| OUT_A[Sin evidencia 🟡]
+    SP -->|NIVEL B| OUT_B[Evidencia parcial + clarificación 🔵]
+    SP -->|NIVEL C| OUT_C[Respuesta con citas 🟢]
+
+    OUT_A --> LOG
+    OUT_B --> LOG
+    OUT_C --> LOG[📝 query_log + analytics]
+
+    classDef input fill:#fde68a,color:#92400e
+    classDef new fill:#dbeafe,color:#1e40af,stroke:#3b82f6,stroke-width:2px
+```
+
+### 🆕 Fase 0.5 — Filtro semántico de contexto
+
+```mermaid
+flowchart LR
+    H[Historial<br/>10 turnos] --> E1[Embed cada par<br/>user+assistant]
+    Q[Query actual] --> E2[Embed query]
+
+    E1 --> COS[Cosine similarity<br/>por turno]
+    E2 --> COS
+
+    COS --> F{score ≥ 0.55?}
+    F -->|sí| KEEP[✅ Incluir]
+    F -->|no| DROP[❌ Descartar]
+    KEEP --> LAST[+ Forzar último turno<br/>siempre]
+    DROP --> LAST
+    LAST --> OUT[Top 6 turnos<br/>al rewriter]
+
+    style F fill:#fef3c7,color:#92400e
+    style KEEP fill:#10b981,color:#fff
+    style DROP fill:#ef4444,color:#fff
+```
+
+**Razón**: usuarios cambian de tema en conversaciones largas. Pasar siempre los últimos N turnos provoca contaminación de contexto (ej. RCD bajo lente de titulización). El filtro semántico solo pasa turnos relacionados con la nueva pregunta.
+
+### 🎯 Fase 3 — Query Profiler
+
+```mermaid
+flowchart TB
+    Q[Query] --> P{Patrón detectado}
+
+    P -->|"Res SBS 11356-2008<br/>Art 5"| L2[Lexical fuerte<br/>2+ entidades]
+    P -->|"Resolución 11356"| L1[Lexical simple<br/>1 entidad]
+    P -->|"¿qué es...?"<br/>"¿cómo...?"| S[Semantic]
+    P -->|sin señal clara| B[Balanced]
+
+    L2 --> W2[w_vector=0.6<br/>w_texto=1.4]
+    L1 --> W1[w_vector=0.8<br/>w_texto=1.2]
+    S --> WS[w_vector=1.3<br/>w_texto=0.7]
+    B --> WB[w_vector=1.0<br/>w_texto=1.0]
+```
+
+---
+
+## 🕸️ Knowledge Graph
+
+```mermaid
+classDiagram
+    class Document {
+        +UUID id
+        +string title
+        +string issuer
+        +string source_url
+        +date publication_date
+    }
+
+    class Resolution {
+        +string number
+        +int year
+        +string status
+    }
+
+    class Topic {
+        +int cluster_id
+        +string label
+        +int members
+    }
+
+    class Article {
+        +int number
+        +string chapter
+    }
+
+    Document "1" --> "*" Article : cites
+    Document "1" --> "*" Resolution : cites
+    Resolution "1" --> "*" Resolution : modifies
+    Resolution "1" --> "*" Resolution : derogates
+    Document "*" --> "*" Topic : topic_member
+
+    class GraphEdge {
+        +UUID src_node
+        +UUID dst_node
+        +string kind
+    }
+```
+
+### Niveles del KG
+
+| Nivel | Qué representa | Cómo se construye |
+|---|---|---|
+| **L1** Citas explícitas | Referencias entre normas | Regex sobre chunks: `Res. SBS N° XXXX-YYYY` |
+| **L2** Tópicos semánticos | Agrupaciones temáticas | K-means sobre embeddings + LLM naming |
+
+**Estado actual**: ~1,100 nodos `document` + 252 nodos `resolution` + 15 nodos `topic` + ~12,000 aristas `cites`.
+
+---
+
+## 📥 Pipeline de ingesta
+
+```mermaid
+flowchart LR
+    SRC[Fuente PDF<br/>URL del catálogo] --> DL[📥 Downloader<br/>respeta robots.txt<br/>excepto .gob.pe]
+
+    DL --> HASH[#️⃣ Hash<br/>SHA-256 contenido]
+    HASH --> CACHE{¿hash cambió?}
+    CACHE -->|no| SKIP[⏭️ Skip<br/>last_status=unchanged]
+    CACHE -->|sí| PARSE
+
+    PARSE[📄 Parser cadena 3 niveles]
+    PARSE --> P1[1. PyMuPDF<br/>preserva tablas]
+    P1 --> CHK1{¿texto ≥ 50 char/pág?}
+    CHK1 -->|sí| OK
+    CHK1 -->|no| P2[2. pypdf fallback]
+    P2 --> CHK2{¿texto suficiente?}
+    CHK2 -->|sí| OK
+    CHK2 -->|no| P3[3. OCR Tesseract<br/>español · DPI 200]
+    P3 --> OK[✅ Texto extraído]
+
+    OK --> CHUNK[✂️ Chunker estructural<br/>detecta Cap → Sec → Art → Anexo]
+    CHUNK --> EMB[🧠 Embedding<br/>768d por chunk]
+    EMB --> STORE[(💾 chunks table<br/>+ tsvector BM25)]
+
+    STORE --> KG[🕸️ Update KG<br/>extrae citas y enlaza]
+
+    style P3 fill:#fef3c7,color:#92400e
+    style CHUNK fill:#dbeafe,color:#1e40af
+    style EMB fill:#4285f4,color:#fff
+```
+
+---
+
+## ⏰ Crons automáticos
+
+```mermaid
+gantt
+    title Cronograma de tareas automáticas (UTC)
+    dateFormat HH:mm
+    axisFormat %H:%M
+
+    section Cada 10 min
+    Worker tick (pending_sources) :crit, w1, 00:00, 10m
+    Worker tick :crit, w2, 00:10, 10m
+    Worker tick :crit, w3, 00:20, 10m
+
+    section Cada 15 min
+    Zombie cleanup :z1, 00:00, 15m
+    Zombie cleanup :z2, 00:15, 15m
+
+    section Cada hora
+    Rebuild grafo + tópicos :g1, 00:05, 5m
+
+    section Diario 03:00
+    Discovery scrapers SBS+BCRP :d1, 03:00, 30m
+
+    section Diario 04:00
+    Backup pg_dump → S3 :b1, 04:00, 15m
+```
+
+---
+
+## 💾 Capa de datos
+
+```mermaid
+erDiagram
+    documents ||--o{ chunks : "1:N"
+    documents ||--o{ change_events : "1:N"
+    doc_sources ||--o{ documents : "1:N"
+    ingestion_runs ||--o{ change_events : "1:N"
+    user_sessions ||--o{ query_log : "1:N"
+    graph_nodes ||--o{ graph_edges : "1:N"
+    documents ||--o{ pending_sources : "scraper"
+
+    documents {
+        uuid id PK
+        text document_id
+        int version_id
+        text title
+        text source_url
+        text content_hash
+        jsonb metadata
+        timestamp indexed_at
+    }
+
+    chunks {
+        uuid id PK
+        uuid document_id FK
+        text content
+        vector embedding
+        tsvector content_tsv
+        jsonb metadata
+    }
+
+    query_log {
+        uuid id PK
+        text alias
+        text query_text
+        text answer_text
+        text confidence
+        int n_sources
+        int latency_ms
+        jsonb options
+        jsonb sources_summary
+        timestamp created_at
+    }
+
+    graph_nodes {
+        uuid id PK
+        text label
+        text kind
+        uuid document_id FK
+        jsonb metadata
+    }
+
+    graph_edges {
+        uuid id PK
+        uuid src_node FK
+        uuid dst_node FK
+        text kind
+    }
+```
+
+---
+
+## 🤖 Arquitectura de memoria conversacional
+
+```mermaid
+flowchart TB
+    LOGIN[👤 Login con alias] --> Q1{¿tiene historial<br/>en BD?}
+
+    Q1 -->|sí| ASK[📚 Mostrar opción:<br/>'Cargar N conversaciones?']
+    Q1 -->|no| EMPTY[🆕 Empezar limpio]
+
+    ASK -->|usuario: sí| LOAD[Cargar últimos 20<br/>mensajes de query_log]
+    ASK -->|usuario: no| EMPTY
+
+    LOAD --> SESS[(session_state<br/>historial_chat)]
+    EMPTY --> SESS
+
+    SESS --> CONV[💬 Usuario conversa]
+    CONV --> APPEND[Append turno al historial]
+    APPEND --> SAVE[Persistir en query_log]
+    SAVE --> CONV
+
+    CONV -.->|nueva consulta| FILT[🧠 Filtro semántico<br/>solo turnos relevantes]
+    FILT -.->|contexto limpio| LLM[LLM responde]
+```
+
+**Diferencia clave con sistemas tradicionales**:
+- ❌ Tradicional: pasa últimos N turnos siempre → contamina contexto
+- ✅ RAG SBS: filtra por similitud semántica → solo turnos relevantes
+
+---
+
+## 🎚️ Self-healing
+
+```mermaid
+stateDiagram-v2
+    [*] --> Running: cron tick dispara
+    Running --> Completed: success
+    Running --> Failed: error<br/>process_source
+    Running --> Zombie: crash del proceso<br/>sin actualizar
+
+    Zombie --> Aborted: cron */15 detecta<br/>> 30min sin update
+    Failed --> [*]
+    Completed --> [*]
+    Aborted --> [*]
+
+    note right of Zombie
+        Sin este flujo,
+        zombies se acumulaban
+        (321 en un día observado)
+    end note
+```
+
+---
+
+## 🚀 Decisiones arquitectónicas (ADRs)
+
+| ID | Decisión | Razón |
+|---|---|---|
+| **ADR-001** | Gemini sobre Ollama | Latencia + calidad >> costo en escala portafolio |
+| **ADR-002** | pgvector sobre Pinecone/Weaviate | Simplicidad: una sola BD relacional |
+| **ADR-003** | APScheduler in-process sobre Celery | Stack 5x más simple para 1 worker |
+| **ADR-004** | RRF ponderado sobre concatenación | Documentado en literatura, mejor ranking |
+| **ADR-005** | LLM reranker sobre cross-encoder local | Evita +3GB de sentence-transformers |
+| **ADR-006** | Topic router determinista | Zero falsos positivos en separación regulatoria |
+| **ADR-007** | Caps de costo hard-coded al worker | Presupuesto portafolio limitado |
+| **ADR-008** | Self-healing cron sobre supervisión manual | Experiencia: 321 zombies/día sin esto |
+| **ADR-009** | Filtro semántico de contexto memoria | Resolver contaminación en cambios de tema |
+| **ADR-010** | Plan C: max_tokens 6K-8K, chunks 10 | Aprovechar context window Gemini (1M) |
+
+---
+
+## 📊 Métricas operativas
+
+| Métrica | Valor actual | Meta v1.0 |
+|---|---|---|
+| Latencia query P50 | 4-8s | <5s |
+| Latencia query P95 | 15s | <10s |
+| Confianza ALTA real | ~70% | >85% |
+| Costo por query | ~$0.005 | <$0.003 |
+| Uptime | 99.5% | 99.9% |
+| Corpus | 1,100 docs | 2,000+ |
+| Instituciones | 12 | 15+ |

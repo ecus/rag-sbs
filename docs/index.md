@@ -1,124 +1,247 @@
 ---
 title: RAG SBS — Mesa Experta Regulatoria
-description: Sistema RAG agéntico sobre normativa financiera peruana (9 instituciones)
+description: Sistema RAG agéntico sobre normativa financiera peruana
 ---
 
-# RAG SBS — Mesa Experta Regulatoria · v0.4
+<h1 align="center">🏛️ RAG SBS</h1>
+<h3 align="center">Mesa Experta Regulatoria Bancaria · Perú</h3>
 
-> Sistema **RAG agéntico** sobre normativa financiera peruana — **SBS, BCRP, Congreso, MEF, SMV, SUNAT, INDECOPI, BIS, BID**. Responde consultas técnicas con cálculos deterministas, citación de fuente oficial verificable, retrieval híbrido adaptativo, grafo navegable, memoria persistente por usuario y self-healing automatizado.
+<p align="center">
+  <strong>1,100 documentos</strong> · <strong>40,161 chunks</strong> · <strong>12 instituciones</strong>
+</p>
 
-**🌐 Demo en vivo**: [3.220.87.49.nip.io](https://3.220.87.49.nip.io)
-
-**Corpus actual (mayo 2026)**: ~900 documentos · ~29,000 chunks · 9 instituciones · Manual de Contabilidad SBS completo (Cap I-IV)
+<p align="center">
+  <a href="https://3.220.87.49.nip.io">🌐 <strong>Demo en vivo</strong></a> ·
+  <a href="https://github.com/eurrutia/rag-sbs">📦 GitHub</a> ·
+  <a href="architecture.md">🏗️ Arquitectura</a> ·
+  <a href="changelog.md">📝 Changelog</a>
+</p>
 
 ---
 
-## El problema
+## 🎯 ¿Qué es?
 
-Los asesores financieros, oficiales de cumplimiento y profesionales del sistema bancario peruano deben mantenerse actualizados sobre **cientos de resoluciones SBS**, sus modificatorias y la regulación complementaria del BCRP. Tradicionalmente esto se resuelve con:
+Una **mesa experta regulatoria** que responde consultas técnicas de banca peruana **citando la fuente oficial PDF** y realizando **cálculos numéricos deterministas** (sin alucinación).
 
-- Búsqueda manual en PDFs oficiales (lento, propenso a citar normas derogadas).
-- Consulta a chatbots genéricos (ChatGPT, Gemini directo): **alucinan porcentajes y categorías** porque no consultan la fuente real.
+```mermaid
+flowchart LR
+    U[👤<br/>Compliance<br/>Riesgos<br/>Contabilidad] -->|pregunta| MESA[🏛️ Mesa Experta]
+    MESA -->|busca en| C[📚 Corpus<br/>1,100 docs<br/>9 emisores]
+    MESA -->|calcula con| F[🧮 Funciones<br/>deterministas]
+    MESA -->|cita| R[📄 PDFs<br/>oficiales]
+    MESA -->|responde| U
 
-Demostración concreta del problema con un LLM crudo:
-
-| Pregunta | Respuesta Gemini 3 4B (sin RAG) | Realidad (Res. SBS 11356-2008) |
-|---|---|---|
-| Tasa de provisión hipotecario CPP | "0.63%" | **2.50% con garantía preferida / 5.00% sin garantía** |
-| Categorías SBS | "Buena (G), Media (E), Deficiente (D)" | **Normal, CPP, Deficiente, Dudoso, Pérdida** |
-| Hipotecario 100 días atraso | "Calificación deficiente" sin contexto | Verificado: **Deficiente** (rango 61-120 días, Cap. II num. 4.3) |
-
-## La solución
-
-Pipeline completo de RAG que **siempre cita la fuente oficial** y para cálculos numéricos invoca **funciones deterministas** (no inferencia LLM):
-
-```
-Pregunta del usuario
-  ↓
-Query rewriter (resuelve anáforas con historial)
-  ↓
-Embedding + Hybrid Search (vector + BM25 + RRF)
-  ↓
-Graph-augmented retrieval (citaciones L1 + tópicos L2)
-  ↓
-Topic router (filtra Provisiones vs Patrimonio Efectivo vs PLAFT...)
-  ↓
-LLM reranker (cross-encoder o LLM)
-  ↓
-Function calling — clasificar_deudor, calcular_provision
-  ↓
-Generación con cita explícita [Cálculo N] + [Fuente N]
-  ↓
-Respuesta verificable
+    style MESA fill:#003d7a,color:#fff
 ```
 
-## Características destacadas
+---
 
-- **Cita textual** del PDF oficial en cada respuesta (snippet visible inline).
-- **Cálculos deterministas** (no LLM) para clasificación y provisiones — los números nunca se alucinan.
-- **Knowledge Graph navegable**: 317+ nodos, 1969+ aristas de citación entre resoluciones, modificatorias y derogaciones.
-- **Tópicos auto-descubiertos** (K-means + naming por LLM) — visualiza qué clusters semánticos tiene el corpus.
-- **Re-ingesta automática** vía scheduler con detección de cambios (ETag + hash).
-- **Streaming SSE** de respuestas + tarjetas didácticas con desglose paso a paso.
-- **Validación contra fuente oficial**: las tablas de clasificación se validaron extrayendo el texto literal del PDF de SBS Perú vigente al 2026-05.
+## 🌍 Cobertura institucional
 
-## Casos de uso demostrables
+```mermaid
+mindmap
+  root((RAG SBS))
+    🏦 SBS
+      Resoluciones
+      Circulares
+      Manual Contabilidad I-IV
+      Memorias 2017-2024
+    💰 BCRP
+      Circulares
+      Notas informativas
+      Reportes estabilidad
+    ⚖️ Congreso
+      Leyes
+      Decretos Legislativos
+      Decretos Urgencia
+    🏛️ MEF
+      DS tributarios
+      NIIF / NIC
+      Estrategia deuda
+    📈 SMV
+      Resoluciones
+      TUO Mercado Valores
+      Reglamento clasificadoras
+    💵 SUNAT
+      Informes tributarios
+      ITF / IGV financiero
+      Bancarización
+    🛡️ INDECOPI
+      Lineamientos consumidor
+      Resoluciones SPC
+    🌐 Internacional
+      BIS Basilea III
+      BID adopción LATAM
+      GAFI 40 Recomendaciones
+    🇵🇪 Banca Pública
+      Banco de la Nación
+      COFIDE
+      AgroBanco
+```
 
-### 1. Cálculo de provisión hipotecaria
+---
 
-> *"Hipotecario S/ 200,000, atraso 100 días, garantía S/ 180,000. ¿Qué hago?"*
+## ⚡ Ejemplo 1 — Cálculo regulatorio
 
-→ Sistema dispara 2 cálculos deterministas:
-- `clasificar_deudor(hipotecario, 100d) → Deficiente` (cita Cap. II num. 4.3)
-- `calcular_provision(200k, Deficiente, preferida, 180k) → S/ 38,750` (Cap. III + Anexo II)
+> **Usuario**: *"Hipotecario S/ 200,000, atraso 100 días, garantía S/ 180,000. ¿Qué hago?"*
 
-Card UI muestra: tabla de origen, fórmula aritmética paso a paso, narrativa didáctica.
+```mermaid
+flowchart LR
+    Q[Pregunta] --> CL[🧮 clasificar_deudor 100d]
+    CL --> RES1[Deficiente<br/>rango 61-120 días]
+    Q --> PR[🧮 calcular_provision]
+    RES1 --> PR
+    PR --> RES2[S/ 38,750<br/>5% sobre exposición]
+    RES2 --> ANS[📝 Respuesta con:<br/>citas Res SBS 11356<br/>tabla regulatoria<br/>desglose paso a paso]
 
-### 2. Conceptual con ejemplo demo
+    style CL fill:#10b981,color:#fff
+    style PR fill:#10b981,color:#fff
+    style ANS fill:#4285f4,color:#fff
+```
 
-> *"¿Cuál es el % de provisión genérica y específica hipotecario? Muéstrame un ejemplo sencillo."*
+---
 
-→ Detecta "ejemplo sencillo", inyecta valores demo automáticamente (saldo 100k, dos categorías Normal+Deficiente), dispara 4 cálculos y responde con tabla por categoría + fuente.
+## 🆚 Ejemplo 2 — Anti-alucinación
 
-### 3. Consulta sobre tasas de interés (cross-regulación)
+> **Usuario**: *"¿Cuál es la tasa de provisión hipotecaria para CPP?"*
 
-> *"En mi empresa de crédito uso tasa moratoria de 13%, ¿puedo subirla a 15%?"*
+<table>
+<tr>
+<th>Sistema</th>
+<th>Respuesta</th>
+<th>Veredicto</th>
+</tr>
+<tr>
+<td>Gemini directo</td>
+<td>"0.63%"</td>
+<td>❌ Inventado</td>
+</tr>
+<tr>
+<td><strong>RAG SBS</strong></td>
+<td>"2.50% con garantía preferida / 5.00% sin garantía"<br/><i>fuente: Res. SBS 11356-2008 Cap. III</i></td>
+<td>✅ Verificable</td>
+</tr>
+</table>
 
-→ Recupera Res. SBS 8181-2012 (Reglamento de Transparencia) + Circular BCRP 0008-2021 (tasa máxima). Cita textualmente: "tasa moratoria máxima = 15% adicional sobre la compensatoria".
+---
 
-## Stack técnico
+## 🧠 Ejemplo 3 — Caso integral
 
-| Capa | Tecnología |
-|---|---|
-| Backend API | FastAPI + Python 3.11 |
-| UI | Streamlit (paleta SBS) |
-| LLM | Gemini 2.5 Flash (Google AI Studio) — Ollama fallback |
-| Embeddings | `gemini-embedding-001` (768d) |
-| Vector store | PostgreSQL + pgvector |
-| Knowledge Graph | PostgreSQL nativo + extracción L1 (regex) + L2 (K-means) |
-| Cache semántico | Redis |
-| Container | Docker / Podman |
-| Deploy | AWS Lightsail (fase 1) → GCP Cloud Run (fase 2) |
-| Reverse proxy | Caddy con HTTPS automático |
+Para casos complejos hay un **wizard** que arma la consulta estructurada:
 
-## Validación regulatoria
+```mermaid
+flowchart TB
+    R[👤 Rol:<br/>Compliance officer] --> W[🪄 Wizard]
+    C[📋 Caso:<br/>Empresa de crédito<br/>+ titulización<br/>+ fideicomiso] --> W
+    O[🎯 Objetivo:<br/>Informe regulatorio<br/>integral] --> W
+    T[🏷️ Temas:<br/>Riesgo crédito,<br/>Gobierno,<br/>Manual Contab.] --> W
 
-Las tablas oficiales que el sistema usa para cálculos deterministas **fueron validadas contra el PDF en línea de la SBS Perú** (`intranet2.sbs.gob.pe/dv_int_cn/1097/v6.0/`). Se descartaron resoluciones que tienen el mismo número pero versión obsoleta. Se verificaron las modificatorias relevantes:
+    W --> Q[Consulta estructurada<br/>+ toggles auto:<br/>Grafo + Informe + Agente]
+    Q --> INF[📊 Informe 7 secciones:<br/>1. Resumen ejecutivo<br/>2. Marco regulatorio<br/>3. Riesgos<br/>4. Contable<br/>5. IT<br/>6. Gobierno<br/>7. Recomendaciones]
 
-- ✓ Res. SBS 11356-2008 (vigente)
-- ✓ Res. SBS 2368-2023 (modifica num. 2.2 corporativo)
-- ✓ Res. SBS 4345-2023 (definiciones Cap. I, no toca rangos)
-- ✓ Res. SBS 975-2025 (definiciones, no toca rangos)
+    style W fill:#fef3c7,color:#92400e
+    style INF fill:#10b981,color:#fff
+```
 
-Conclusión: **ningún cambio normativo posterior altera los rangos de días por categoría**.
+**Output real obtenido**: 7 fuentes citadas (scores 0.70–0.90), confianza ALTA, 15s latencia, incluye Res SBS 1308-2013, 3780-2011, 14354-2009, 1010-99, 3986-2024.
 
-## Páginas de documentación
+---
 
-- [Arquitectura](architecture.md) — diagramas y componentes
-- [Casos de uso](casos-de-uso.md) — queries demostrables con resultado esperado
-- [Fuentes regulatorias](regulatorio.md) — corpus SBS + BCRP indexado
-- [Roadmap](roadmap.md) — fases del producto
+## ✨ Capacidades v0.5
 
-## Código fuente
+### 🔎 Retrieval inteligente
 
-Disponible en [github.com/{{ site.github.owner_name }}/rag-sbs](https://github.com/ecus/rag-sbs).
+```mermaid
+flowchart LR
+    Q[Query] --> P{Profiler}
+    P -->|Lexical fuerte<br/>'Res 11356-2008 Art 5'| BM[BM25 prioridad<br/>w=1.4]
+    P -->|Semántico<br/>'qué es titulización?'| VEC[Vector prioridad<br/>w=1.3]
+    P -->|Balanced| MIX[Equal weights]
+
+    BM --> H[Hybrid search<br/>RRF ponderado]
+    VEC --> H
+    MIX --> H
+    H --> R[Re-ranker LLM<br/>top 25 → 10]
+
+    style BM fill:#f97316,color:#fff
+    style VEC fill:#4285f4,color:#fff
+    style R fill:#10b981,color:#fff
+```
+
+### 🧠 Memoria sin sesgo
+
+```mermaid
+flowchart TB
+    Q[💬 Nueva pregunta:<br/>'qué es el RCD?']
+    H[Historial:<br/>10 turnos sobre<br/>titulización]
+
+    Q --> F[🧠 Filtro semántico<br/>cosine vs cada turno]
+    H --> F
+
+    F --> R1[Turno 1 titulización<br/>score 0.32 ❌]
+    F --> R2[Turno 3 contabilización<br/>score 0.41 ❌]
+    F --> R3[Turno 9 último<br/>score 0.45 ✅ siempre]
+
+    R1 --> CLEAN[Contexto limpio<br/>al LLM]
+    R2 --> CLEAN
+    R3 --> CLEAN
+
+    CLEAN --> ANS[Respuesta de RCD<br/>sin sesgo de titulización]
+
+    style F fill:#dbeafe,color:#1e40af,stroke:#3b82f6,stroke-width:3px
+    style CLEAN fill:#10b981,color:#fff
+```
+
+### 🔍 Detector de acrónimos
+
+Para acrónimos ambiguos comunes (RCD, PDD, RPC, SAR, GIR, etc.) el sistema pregunta antes de buscar:
+
+> ⚠️ Detecté `RCD`. ¿A cuál te referís?
+>
+> - 📋 **Reporte Crediticio de Deudores** — Res SBS 11356-2008
+> - 💱 **Riesgo Cambiario Crediticio** — Res SBS 774-2025
+> - 🛡 **Reglamento de Conducta de Mercado** — Res SBS 3274-2017
+
+---
+
+## 🏗️ Stack técnico
+
+<p align="center">
+<img alt="python" src="https://img.shields.io/badge/Python_3.11-3776AB?style=flat-square&logo=python&logoColor=white">
+<img alt="fastapi" src="https://img.shields.io/badge/FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white">
+<img alt="streamlit" src="https://img.shields.io/badge/Streamlit-FF4B4B?style=flat-square&logo=streamlit&logoColor=white">
+<img alt="postgres" src="https://img.shields.io/badge/PostgreSQL_16-336791?style=flat-square&logo=postgresql&logoColor=white">
+<img alt="pgvector" src="https://img.shields.io/badge/pgvector-336791?style=flat-square">
+<img alt="redis" src="https://img.shields.io/badge/Redis-DC382D?style=flat-square&logo=redis&logoColor=white">
+<img alt="docker" src="https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white">
+<img alt="gemini" src="https://img.shields.io/badge/Gemini_2.5_Flash-4285F4?style=flat-square&logo=google&logoColor=white">
+<img alt="tesseract" src="https://img.shields.io/badge/Tesseract_OCR-5C5C5C?style=flat-square">
+<img alt="caddy" src="https://img.shields.io/badge/Caddy_v2-1F88C0?style=flat-square&logo=caddy&logoColor=white">
+</p>
+
+Detalle completo en [Arquitectura](architecture.md).
+
+---
+
+## 📚 Documentos del proyecto
+
+- 🏗️ [**Arquitectura técnica**](architecture.md) — Diagramas, ADRs, pipeline detallado
+- 📝 [**Changelog**](changelog.md) — Historial v0.1 → v0.5
+- 🗺️ [**Roadmap**](roadmap.md) — Fase 0 → Fase 10
+- 📋 [**Casos de uso**](casos-de-uso.md) — Demos end-to-end
+- 🏛️ [**Mapeo regulatorio**](regulatorio.md) — Corpus por área
+
+---
+
+## 👤 Sobre el autor
+
+**Erik Urrutia** — Ingeniero, consultor regulatorio.
+
+Este sistema es **portafolio personal** que demuestra:
+- 🎯 RAG production-grade con cero alucinación numérica
+- 🧠 Memoria conversacional sin sesgo (filtro semántico)
+- 🕸️ Knowledge graph navegable con ~12K aristas
+- 🛡️ Self-healing y observabilidad operacional
+- 💰 Costos controlados (~$20/mes total)
+
+📧 [eurrutia489@gmail.com](mailto:eurrutia489@gmail.com)

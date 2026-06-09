@@ -1,273 +1,356 @@
-# RAG SBS — Mesa Experta Regulatoria
+<h1 align="center">🏛️ RAG SBS</h1>
+<h3 align="center">Mesa Experta Regulatoria Bancaria · Perú</h3>
 
-> Sistema **RAG agéntico** sobre normativa financiera peruana (**SBS**, **BCRP**, **Congreso**, **MEF**, **SMV**, **SUNAT**, **INDECOPI**, **BIS/BID**). Respuestas con citación de fuente oficial verificable, cálculos deterministas, grafo navegable de citaciones, retrieval híbrido adaptativo y memoria por usuario.
+<p align="center">
+  <a href="https://3.220.87.49.nip.io"><img alt="demo" src="https://img.shields.io/badge/demo-live-success?style=for-the-badge&logo=streamlit"></a>
+  <a href="#"><img alt="version" src="https://img.shields.io/badge/version-0.5-blue?style=for-the-badge"></a>
+  <a href="#"><img alt="docs" src="https://img.shields.io/badge/docs-pages-orange?style=for-the-badge&logo=gitbook"></a>
+  <img alt="docs" src="https://img.shields.io/badge/corpus-1100%20docs-purple?style=for-the-badge">
+  <img alt="docs" src="https://img.shields.io/badge/instituciones-12-red?style=for-the-badge">
+</p>
 
-**🌐 Demo en vivo**: [3.220.87.49.nip.io](https://3.220.87.49.nip.io)
-**📖 Documentación**: [eurrutia.github.io/rag-sbs](https://eurrutia.github.io/rag-sbs)
-
----
-
-## ¿Qué hace?
-
-Responde preguntas técnicas de banca peruana citando la **fuente oficial PDF** y para cálculos numéricos invoca **funciones deterministas** (nunca alucina porcentajes).
-
-### Capacidades clave (v0.4)
-
-| Capacidad | Implementación |
-|---|---|
-| **Búsqueda híbrida adaptativa** | Vector + BM25 con pesos ajustados según perfil de query (lexical/semantic/balanced) |
-| **Re-ranker LLM** | El LLM re-puntúa 18 candidatos y mantiene los 7 más relevantes |
-| **OCR fallback** | Tesseract español para PDFs escaneados (auto-detectado por densidad de texto) |
-| **Topic router determinista** | Separa Provisiones ↔ Patrimonio Efectivo ↔ LAFT para evitar mezcla |
-| **Calculator agent** | Funciones Python deterministas para clasificación/provisiones (cero alucinación numérica) |
-| **Graph-augmented retrieval** | Knowledge graph L1 (citas) + L2 (tópicos K-means) navegable |
-| **Asistente de consulta** | Wizard que arma queries estructuradas a partir de rol+caso+objetivo |
-| **Memoria persistente** | Recupera últimas 6 conversaciones por alias entre sesiones |
-| **Analytics por usuario** | Log de consultas con confianza, fuentes, latencia, opciones |
-| **Self-healing** | Cron `*/15` limpia runs zombies + cleanup al startup |
-| **Caps de costo** | Worker se autoapaga si supera $9.50 total o $1.50/día |
-
-### Ejemplo 1: Caso multidimensional
-
-> **Usuario** (vía wizard): *Compliance officer · Caso: titulización de cartera + fideicomiso · Objetivo: informe regulatorio integral*
-
-El sistema genera un informe estructurado de 7 secciones con citas a:
-- Res SBS 1308-2013 (Transferencia de Cartera) — score 0.90
-- Res SBS 3780-2011 (Riesgo de Crédito) — score 0.85
-- Res SBS 14354-2009 (Patrimonio Efectivo) — score 0.80
-- Res SBS 1010-99 (Reglamento Fideicomiso) — score 0.75
-- Res SBS 3986-2024 (Cuenta 8406 Cartera Transferida) — score 0.70
-
-### Ejemplo 2: Cálculo determinista
-
-> **Usuario**: "Hipotecario S/ 200,000, atraso 100 días, garantía S/ 180,000. ¿Qué hago?"
-
-Sistema:
-1. `clasificar_deudor("hipotecario", 100)` → **Deficiente** (Cap. II num. 4.3)
-2. `calcular_provision(200k, "Deficiente", "preferida", 180k)` → **S/ 38,750**
-3. UI muestra paso a paso, tabla regulatoria, cita PDF.
-
-### Ejemplo 3: Anti-alucinación
-
-> **Usuario**: "¿Cuál es la tasa de provisión hipotecaria para CPP?"
-
-| Sistema | Respuesta |
-|---|---|
-| Gemini directo | "0.63%" ❌ inventado |
-| **RAG SBS** | "2.50% con garantía preferida / 5.00% sin garantía" ✓ Res. 11356-2008 Cap. III |
+<p align="center">
+  Sistema <b>RAG agéntico</b> sobre normativa financiera peruana —
+  <code>SBS</code> · <code>BCRP</code> · <code>Congreso</code> · <code>MEF</code> · <code>SMV</code> · <code>SUNAT</code> · <code>INDECOPI</code> · <code>BIS</code> · <code>BID</code> · <code>BN</code> · <code>COFIDE</code> · <code>AgroBanco</code>
+</p>
 
 ---
 
-## Estado del corpus (mayo 2026)
+## ⚡ Vista en 30 segundos
 
-| Métrica | Valor |
-|---|---|
-| **Documentos indexados** | ~900 PDFs |
-| **Chunks vectorizados** | ~29,000 |
-| **Instituciones cubiertas** | 9 (SBS, BCRP, Congreso, MEF, SMV, SUNAT, INDECOPI, BIS, BID) |
-| **Capítulos del Manual de Contabilidad SBS** | I, II, III, IV completos (vigencias 2024-2026) |
-| **Knowledge graph** | ~1,100 nodos / ~12,000 aristas |
-| **Tópicos descubiertos** | 15 áreas temáticas (K-means + LLM naming) |
+```mermaid
+flowchart LR
+    U[👤 Usuario] -->|consulta| UI[🖥️ Streamlit UI]
+    UI -->|alias + query| API[⚙️ FastAPI]
+    API -->|embed| EMB[(🧠 Gemini Embeddings)]
+    API -->|busca| DB[(🗄️ pgvector<br/>1,100 docs · 40K chunks)]
+    DB -->|chunks top-10| API
+    API -->|sintetiza| LLM[💬 Gemini 2.5 Flash]
+    LLM -->|respuesta + citas| UI
+    UI -->|render| U
 
----
-
-## Stack
-
-- **Backend**: FastAPI + Python 3.11
-- **UI**: Streamlit (estilo conversacional)
-- **LLM**: Gemini 2.5 Flash (Google AI Studio)
-- **Embeddings**: `gemini-embedding-001` (768d)
-- **Vector store**: PostgreSQL + pgvector
-- **Cache semántico**: Redis
-- **OCR**: Tesseract español
-- **Object storage**: S3 / GCS / local (abstracción cloud-agnóstica)
-- **Reverse proxy**: Caddy con HTTPS automático (Let's Encrypt)
-- **Containerización**: Docker
-- **Scheduling**: APScheduler (cron jobs in-process)
-
----
-
-## Características técnicas destacadas
-
-### Retrieval
-- **Hybrid search adaptativo**: pesos vector vs BM25 ajustados automáticamente por perfil de query
-  - Lexical fuerte (2+ entidades): w_vector=0.6, w_texto=1.4
-  - Lexical simple: 0.8 / 1.2
-  - Semantic: 1.3 / 0.7
-  - Balanced: 1.0 / 1.0
-- **Reciprocal Rank Fusion** (k=60, ponderado)
-- **Re-ranker LLM** con prompt de 5 niveles de discriminación (0-10):
-  - 10: respuesta literal
-  - 8-9: regla aplicable con entidad clave
-  - 5-7: contexto relacionado
-  - 2-4: mismo cuerpo, otro capítulo
-  - 0-1: ruido
-- **Graph-augmented retrieval** opcional (multi-hop)
-
-### Generación
-- SYSTEM_PROMPT con 3 niveles de evidencia:
-  - **A**: sin info → "no tengo evidencia"
-  - **B**: info parcial → describe lo encontrado + formula 2-3 preguntas de clarificación
-  - **C**: info suficiente → respuesta con citas
-- Español peruano neutro/formal (sin voseo)
-- Anti-mezcla regulatoria (provisiones ≠ patrimonio efectivo)
-
-### Ingestion
-- **Parser de 3 niveles**: PyMuPDF → pypdf → **OCR Tesseract** si chars_promedio < 50
-- **Chunker estructural**: detecta `Capítulo > Sección > Artículo > Anexo`
-- **Worker background** con cron `*/10` + caps de costo automáticos
-- **Scrapers** SBS / BCRP con verificación HTTP HEAD
-- **Catálogo curado** versionado (v1 → v5 = 413 fuentes verificadas)
-
-### Operación
-- **Self-healing**: cron `*/15` limpia runs zombies (>30 min sin actualizar)
-- **Memoria persistente** por alias de usuario (recupera últimas 6 conversaciones)
-- **Query log** con metadata completa para analytics
-- **Modo usuario vs modo técnico**: usuario final ve UI limpia, admin ve dashboard
-
----
-
-## Quickstart desarrollo local
-
-```bash
-# 1. Prerrequisitos
-brew install docker
-docker compose --version
-
-# 2. Configurar
-cp .env.example .env
-# Editar .env: GOOGLE_API_KEY=tu_api_key
-
-# 3. Levantar stack
-docker compose up -d
-
-# 4. Migrar BD (incluye 005_query_log.sql)
-docker exec rag-sbs-postgres psql -U rag -d ragdb -f /sql/migrations/001_init.sql
-# ... aplicar 002-005
-
-# 5. Seedear catálogo
-curl -X POST http://localhost:8000/v1/ingest/seed
-
-# 6. Disparar ingesta
-curl -X POST http://localhost:8000/v1/ingest/scan -d '{}' -H 'Content-Type: application/json'
-
-# 7. UI en http://localhost:8501
+    style API fill:#003d7a,color:#fff
+    style LLM fill:#4285f4,color:#fff
+    style DB fill:#336791,color:#fff
+    style UI fill:#ff4b4b,color:#fff
 ```
 
-## Quickstart producción
+## 🎯 ¿Qué hace?
+
+Responde preguntas técnicas de banca peruana **con cita literal de la fuente oficial PDF** y para cálculos numéricos invoca **funciones deterministas** (no alucina).
+
+### Ejemplo en vivo
+
+> **Usuario:** *"Hipotecario S/ 200,000, atraso 100 días, garantía S/ 180,000. ¿Qué hago?"*
+
+```mermaid
+sequenceDiagram
+    participant U as 👤 Usuario
+    participant API as ⚙️ API
+    participant CALC as 🧮 Calculator Agent
+    participant LLM as 💬 LLM
+    participant DB as 🗄️ pgvector
+
+    U->>API: pregunta + alias
+    API->>DB: hybrid search (vector + BM25)
+    DB-->>API: 10 chunks relevantes
+    API->>CALC: detectar intención de cálculo
+    CALC->>CALC: clasificar_deudor(100d) → Deficiente
+    CALC->>CALC: calcular_provision(200K, Deficiente, garantía) → S/ 38,750
+    API->>LLM: prompt + chunks + cálculos
+    LLM-->>API: respuesta estructurada
+    API-->>U: streaming + fuentes citadas
+```
+
+**Respuesta del sistema:**
+- ✅ Clasificación: **Deficiente** (Res SBS 11356-2008, Cap. II num. 4.3)
+- ✅ Provisión: **S/ 38,750**
+- ✅ Tabla regulatoria con fila resaltada
+- ✅ Cita literal del PDF
+
+---
+
+## 📊 Estado del sistema (junio 2026)
+
+<table>
+<tr>
+<td>
+
+**Corpus**
+| Métrica | Valor |
+|---|---|
+| 📄 Documentos | **1,100** |
+| 🧩 Chunks | **40,161** |
+| 🏛️ Instituciones | **12** |
+| 🕸️ Aristas grafo | **~12,000** |
+| 🎯 Tópicos | **15** |
+
+</td>
+<td>
+
+**Cobertura institucional**
+| Institución | Docs |
+|---|---|
+| 🏦 SBS | ~210 |
+| 💰 BCRP | ~67 |
+| ⚖️ Congreso | ~75 |
+| 🏛️ MEF | ~72 |
+| 📈 SMV | ~27 |
+| 💵 SUNAT | ~38 |
+| 🛡️ INDECOPI | ~12 |
+| 🌍 BIS / BID | 5 |
+
+</td>
+</tr>
+</table>
+
+---
+
+## 🏗️ Arquitectura
+
+```mermaid
+graph TB
+    subgraph "🌐 Cliente"
+        BR[Browser]
+    end
+
+    subgraph "🔒 Edge"
+        CAD[Caddy<br/>HTTPS auto]
+    end
+
+    subgraph "📱 Frontend"
+        UI[Streamlit UI<br/>:8501]
+    end
+
+    subgraph "⚙️ Backend"
+        API[FastAPI<br/>:8000]
+        SCH[APScheduler<br/>crons]
+    end
+
+    subgraph "🗄️ Persistencia"
+        PG[(PostgreSQL<br/>+ pgvector)]
+        RD[(Redis<br/>cache)]
+        OBJ[(S3 / Local<br/>PDFs)]
+    end
+
+    subgraph "🤖 IA"
+        GEM[Gemini 2.5 Flash<br/>embed + generation]
+        OCR[Tesseract<br/>español]
+    end
+
+    BR --> CAD
+    CAD --> UI
+    CAD --> API
+    UI -.->|REST| API
+    API --> PG
+    API --> RD
+    API --> GEM
+    API --> OCR
+    API --> OBJ
+    SCH -.->|tick *_10min| API
+
+    style BR fill:#f97316,color:#fff
+    style CAD fill:#10b981,color:#fff
+    style UI fill:#ff4b4b,color:#fff
+    style API fill:#003d7a,color:#fff
+    style PG fill:#336791,color:#fff
+    style RD fill:#dc382d,color:#fff
+    style GEM fill:#4285f4,color:#fff
+```
+
+---
+
+## 🔬 Pipeline de query (8 fases)
+
+```mermaid
+flowchart TB
+    Q[💬 Query del usuario] --> M1{¿hay historial?}
+
+    M1 -->|sí| MEM[🧠 Filtro semántico<br/>de turnos relevantes<br/><i>cosine ≥ 0.55</i>]
+    M1 -->|no| RW
+    MEM --> RW[✏️ Rewriter<br/>standalone query]
+
+    RW --> E[🔢 Embedding<br/>gemini-embedding-001]
+    E --> P[🎯 Query profiler<br/>lexical / semantic / balanced]
+    P --> H[🔍 Hybrid search<br/>vector + BM25 + RRF ponderado]
+
+    H --> G{¿Graph-aug?}
+    G -->|sí| GR[🕸️ Multi-hop<br/>siguiendo aristas del KG]
+    G -->|no| R
+    GR --> R[🏆 LLM Re-ranker<br/>25 candidatos → top 10]
+
+    R --> T[🚦 Topic router<br/>anti-mezcla regulatoria]
+    T --> CAL[🧮 Calculator agent<br/>function calling]
+    CAL --> SYN[💬 Generación LLM<br/>3 niveles de evidencia]
+    SYN --> LOG[📝 Log query_log<br/>analytics]
+    LOG --> OUT[📤 Streaming SSE]
+
+    style MEM fill:#fef3c7,color:#92400e
+    style P fill:#fef3c7,color:#92400e
+    style R fill:#fef3c7,color:#92400e
+    style CAL fill:#10b981,color:#fff
+    style SYN fill:#4285f4,color:#fff
+```
+
+---
+
+## ✨ Capacidades clave (v0.5)
+
+<table>
+<tr>
+<th>Categoría</th>
+<th>Capacidad</th>
+<th>Implementación</th>
+</tr>
+<tr>
+<td rowspan="4">🔎<br/><b>Retrieval</b></td>
+<td>Hybrid search adaptativo</td>
+<td>Pesos vector/BM25 según perfil de query (4 modos)</td>
+</tr>
+<tr>
+<td>Re-ranker LLM</td>
+<td>25 candidatos → top 10 con prompt 5 niveles</td>
+</tr>
+<tr>
+<td>Graph-augmented</td>
+<td>Multi-hop sobre KG L1 (citas) + L2 (tópicos)</td>
+</tr>
+<tr>
+<td>Topic router</td>
+<td>Anti-mezcla: provisiones ≠ patrimonio ≠ LAFT</td>
+</tr>
+<tr>
+<td rowspan="3">🧠<br/><b>Memoria</b></td>
+<td>Filtro semántico de contexto</td>
+<td>Embeddings filtran turnos relevantes a query actual</td>
+</tr>
+<tr>
+<td>Persistente por alias</td>
+<td>Recupera últimas 20 conversaciones al login (opt-in)</td>
+</tr>
+<tr>
+<td>Detector acrónimos ambiguos</td>
+<td>RCD/PDD/RPC/SAR → desambigua antes de consultar</td>
+</tr>
+<tr>
+<td rowspan="3">📥<br/><b>Ingesta</b></td>
+<td>Parser de 3 niveles</td>
+<td>PyMuPDF → pypdf → <b>OCR Tesseract español</b></td>
+</tr>
+<tr>
+<td>Chunker estructural</td>
+<td>Detecta jerarquía SBS (Cap > Sec > Art > Anexo)</td>
+</tr>
+<tr>
+<td>Worker autónomo + caps</td>
+<td>$9.50 USD / $1.50 diarios / 2000 docs / hasta junio</td>
+</tr>
+<tr>
+<td rowspan="3">⚙️<br/><b>Operación</b></td>
+<td>Self-healing</td>
+<td>Cron <code>*/15</code> mata runs zombies > 30 min</td>
+</tr>
+<tr>
+<td>Analytics por usuario</td>
+<td>Log de consultas + dashboard drill-down</td>
+</tr>
+<tr>
+<td>Discovery continuo</td>
+<td>Cron diario 03:00 UTC busca PDFs nuevos</td>
+</tr>
+<tr>
+<td rowspan="2">🎨<br/><b>UX</b></td>
+<td>Wizard de consulta</td>
+<td>Rol + caso + objetivo → query estructurada</td>
+</tr>
+<tr>
+<td>Chat estilo conversación</td>
+<td>Burbujas alineadas, modo usuario vs técnico</td>
+</tr>
+</table>
+
+---
+
+## 🚀 Quickstart
+
+### Desarrollo local
 
 ```bash
-# AWS Lightsail (Ubuntu 22.04 LTS, 2GB RAM mínimo)
-ssh ubuntu@<IP> "bash <(curl -fsSL https://raw.githubusercontent.com/eurrutia/rag-sbs/main/scripts/lightsail/bootstrap.sh)"
+cp .env.example .env
+# Editar: GOOGLE_API_KEY=...
 
-# Configurar .env.prod con:
-# - GOOGLE_API_KEY
-# - POSTGRES_PASSWORD
-# - DOMAIN=tu-vm.nip.io
+docker compose up -d
 
-# Lanzar stack productivo
+# Aplicar migraciones (001 → 005)
+for m in sql/migrations/*.sql; do
+  docker exec rag-sbs-postgres psql -U rag -d ragdb -f /sql/migrations/$(basename $m)
+done
+
+# Seed catálogo + scan
+curl -X POST http://localhost:8000/v1/ingest/seed
+curl -X POST http://localhost:8000/v1/ingest/scan -d '{}' -H 'Content-Type: application/json'
+
+# UI en http://localhost:8501
+```
+
+### Producción AWS Lightsail
+
+```bash
+ssh ubuntu@<vm-ip> "bash <(curl -fsSL https://raw.githubusercontent.com/eurrutia/rag-sbs/main/scripts/lightsail/bootstrap.sh)"
+
+# Editar .env.prod con GOOGLE_API_KEY, POSTGRES_PASSWORD, DOMAIN
+
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
 ```
 
 ---
 
-## Estructura del repo
+## 📚 Stack
 
-```
-rag-sbs/
-├── src/
-│   ├── api/
-│   │   ├── routes_query.py        ← /v1/query, /v1/query/stream
-│   │   ├── routes_ingest.py       ← /v1/ingest/scan, /v1/ingest/seed
-│   │   ├── routes_graph.py        ← /v1/graph/*, viz interactiva
-│   │   ├── routes_background.py   ← /v1/background/* (worker control)
-│   │   ├── routes_analytics.py    ← /v1/analytics/* (queries por usuario)
-│   │   └── routes_health.py
-│   ├── agents/
-│   │   ├── calculator_agent.py    ← function calling
-│   │   ├── planner.py             ← decide responder vs clarificar
-│   │   ├── topic_router.py        ← separación regulatoria
-│   │   └── query_rewriter.py      ← reescritura con historial
-│   ├── rag/
-│   │   ├── parser.py              ← PyMuPDF + pypdf + OCR Tesseract
-│   │   ├── chunker_estructural.py ← detecta jerarquía SBS
-│   │   ├── reranker.py            ← dispatcher (llm/cross-encoder/cohere)
-│   │   ├── reranker_llm.py        ← re-ranking con prompt de 5 niveles
-│   │   └── query_profile.py       ← perfilador para hybrid tuning
-│   ├── llm/
-│   │   ├── base.py                ← interfaz LLMProvider
-│   │   └── gemini.py              ← implementación Google AI Studio
-│   ├── storage/
-│   │   ├── pgvector_store.py      ← hybrid_search con pesos adaptativos
-│   │   ├── query_log.py           ← persistencia consultas + memoria
-│   │   └── object_store.py        ← abstracción S3/GCS/local
-│   ├── tools/
-│   │   ├── clasificacion.py       ← clasificar_deudor()
-│   │   └── provisiones.py         ← calcular_provision()
-│   ├── graph/
-│   │   ├── builder.py             ← construir L1 (citas)
-│   │   └── topics.py              ← K-means L2 + LLM naming
-│   ├── ingestion/
-│   │   ├── pipeline.py            ← process_source + run_scan
-│   │   ├── background_worker.py   ← tick con caps de costo
-│   │   ├── scheduler.py           ← APScheduler + zombie cleanup
-│   │   ├── downloader.py          ← fetch con respeto a robots.txt
-│   │   ├── scrapers/              ← SBS, BCRP, HTML
-│   │   └── seed_catalog.py        ← 413 fuentes verificadas
-│   └── ui/
-│       ├── streamlit_app.py       ← tabs Consultar/Tópicos/Mapa/A-B/Admin
-│       ├── api_client.py
-│       └── styles.py              ← CSS + chat bubbles
-├── sql/migrations/
-│   ├── 001_init.sql
-│   ├── 002_doc_sources.sql
-│   ├── 003_graph.sql
-│   ├── 004_background.sql         ← worker + cost tracker
-│   └── 005_query_log.sql          ← user_sessions + query_log
-├── docs/                          ← GitHub Pages site
-├── deploy/                        ← Caddyfile + docker-compose.prod.yml
-├── scripts/
-│   └── lightsail/bootstrap.sh
-├── data/sample/                   ← PDFs de muestra
-├── docker-compose.prod.yml
-└── Dockerfile                     ← multi-stage con Tesseract
-```
+<p>
+<img alt="python" src="https://img.shields.io/badge/Python-3.11-blue?logo=python&logoColor=white">
+<img alt="fastapi" src="https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white">
+<img alt="streamlit" src="https://img.shields.io/badge/Streamlit-FF4B4B?logo=streamlit&logoColor=white">
+<img alt="postgres" src="https://img.shields.io/badge/PostgreSQL-336791?logo=postgresql&logoColor=white">
+<img alt="pgvector" src="https://img.shields.io/badge/pgvector-336791?logo=postgresql&logoColor=white">
+<img alt="redis" src="https://img.shields.io/badge/Redis-DC382D?logo=redis&logoColor=white">
+<img alt="docker" src="https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white">
+<img alt="gemini" src="https://img.shields.io/badge/Gemini%202.5%20Flash-4285F4?logo=google&logoColor=white">
+<img alt="tesseract" src="https://img.shields.io/badge/Tesseract%20OCR-5C5C5C">
+<img alt="caddy" src="https://img.shields.io/badge/Caddy-1F88C0?logo=caddy&logoColor=white">
+</p>
 
 ---
 
-## Roadmap
+## 📖 Documentación
 
-✅ **Fase 0 — Demo técnica completada**
-✅ **Fase 1 — Deploy AWS Lightsail con HTTPS**
-✅ **Fase 2 — Corpus regulatorio multiinstitucional (9 emisores)**
-✅ **Fase 3 — Manual de Contabilidad SBS completo (Cap I-IV)**
-✅ **Fase 4 — Retrieval avanzado (hybrid tuning + LLM reranker + OCR)**
-✅ **Fase 5 — Analytics + memoria persistente por usuario**
-⏳ **Fase 6 — Migración GCP Cloud Run con vector store gestionado**
-⏳ **Fase 7 — Multi-tenant + RBAC + agentes especializados por área**
-
-Ver [`docs/roadmap.md`](docs/roadmap.md) para detalle.
-
----
-
-## Costos operativos
-
-| Concepto | Costo mensual estimado |
+| Archivo | Contenido |
 |---|---|
-| AWS Lightsail VM 2GB | USD 12 |
-| Gemini 2.5 Flash (embeddings + generación, 1000 queries/día) | ~USD 5-10 |
-| Dominio nip.io (gratuito) | $0 |
-| **Total** | **~USD 20/mes** |
+| [`docs/architecture.md`](docs/architecture.md) | Arquitectura técnica detallada con diagramas |
+| [`docs/changelog.md`](docs/changelog.md) | Historial de versiones v0.1 → v0.5 |
+| [`docs/roadmap.md`](docs/roadmap.md) | Hoja de ruta Fase 0 → Fase 10 |
+| [`docs/casos-de-uso.md`](docs/casos-de-uso.md) | Casos demo end-to-end |
+| [`docs/regulatorio.md`](docs/regulatorio.md) | Mapeo del corpus regulatorio |
 
-Cap de seguridad configurado: **USD 9.50 total** (worker se autoapaga).
+🌐 Documentación web: [eurrutia.github.io/rag-sbs](https://eurrutia.github.io/rag-sbs)
 
 ---
 
-## Licencia
+## 💰 Costos operativos
 
-Propietario — Erik Urrutia (mayo 2026).
-Código de referencia abierto bajo solicitud para portafolio.
+| Concepto | USD/mes |
+|---|---|
+| AWS Lightsail VM 2GB + 2GB swap | $12 |
+| Gemini 2.5 Flash (1K queries/día) | $5-10 |
+| Dominio nip.io | $0 |
+| **Total** | **~$20/mes** |
 
-## Contacto
+Cap de seguridad del worker: **$9.50 USD acumulado** (autoapagado).
 
-**Erik Urrutia** — eurrutia489@gmail.com
+---
+
+## 👤 Autor
+
+**Erik Urrutia** · eurrutia489@gmail.com
+
+> Portafolio personal · Reutilizable bajo solicitud

@@ -1,12 +1,19 @@
 # Configuración GitHub Pages (Jekyll)
-title: RAG SBS — Asesor Regulatorio
+title: 🏛️ RAG SBS · Mesa Experta Regulatoria
 description: >-
-  Sistema RAG agéntico sobre normativa de la SBS Perú con cálculos
-  deterministas, grafo de citaciones y respuestas verificables contra fuente
-  oficial.
+  Sistema RAG agéntico v0.5 sobre normativa financiera peruana —
+  SBS, BCRP, Congreso, MEF, SMV, SUNAT, INDECOPI, BIS, BID, BN, COFIDE,
+  AgroBanco. 1,100 documentos, 40K chunks, citas verificables y memoria
+  conversacional con filtro semántico.
 theme: jekyll-theme-cayman
 show_downloads: false
 google_analytics:
+
+# Renderizado Mermaid para diagramas
+plugins:
+  - jekyll-mermaid
+
+# Mermaid via CDN para diagramas didácticos
 
 # Excluir archivos no relevantes del build
 exclude:
