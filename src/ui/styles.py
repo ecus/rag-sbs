@@ -766,17 +766,34 @@ div[data-testid="stChatMessage"]:has([data-testid*="vatarAssistant"]) > div:last
 }
 
 /* ─── Input FIJO al pie de pantalla (estilo ChatGPT) ─── */
+/* Streamlit por defecto NO fija el chat_input cuando está dentro de tabs.
+   Lo forzamos con position fixed agresivamente. */
 [data-testid="stChatInput"],
-div[data-testid="stChatInput"],
-[data-testid="stBottomBlockContainer"] {
-  position: sticky !important;
+div[data-testid="stChatInput"] {
+  position: fixed !important;
   bottom: 0 !important;
+  left: 21rem !important;   /* ancho del sidebar de Streamlit */
+  right: 0 !important;
+  width: auto !important;
   background: linear-gradient(180deg,
     rgba(255,255,255,0) 0%,
     rgba(255,255,255,0.95) 25%,
+    white 60%,
     white 100%) !important;
-  padding: 18px 0 12px !important;
-  z-index: 999 !important;
+  padding: 20px 3rem 16px !important;
+  z-index: 9999 !important;
+  margin: 0 !important;
+}
+
+/* Cuando sidebar está colapsado */
+[data-testid="stSidebar"][aria-expanded="false"] ~ * [data-testid="stChatInput"] {
+  left: 0 !important;
+}
+
+/* Espacio al final del chat para que el último mensaje no quede tapado por el input */
+[data-testid="stMain"] > div > div:last-child,
+.main .block-container {
+  padding-bottom: 130px !important;
 }
 
 [data-testid="stChatInput"] > div,
