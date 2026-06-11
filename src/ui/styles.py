@@ -792,8 +792,26 @@ div[data-testid="stChatInput"] {
 
 /* Espacio al final del chat para que el último mensaje no quede tapado por el input */
 [data-testid="stMain"] > div > div:last-child,
-.main .block-container {
-  padding-bottom: 130px !important;
+.main .block-container,
+section.main > div.block-container,
+[data-testid="stMain"] .block-container {
+  padding-bottom: 220px !important;
+  margin-bottom: 60px !important;
+}
+
+/* Asegurar que el contenido scrollee bien */
+[data-testid="stMainBlockContainer"] {
+  padding-bottom: 200px !important;
+}
+
+/* Auto-scroll al final cuando hay nuevo mensaje */
+@keyframes scrollAnchor {
+  from { scroll-margin-bottom: 200px; }
+  to { scroll-margin-bottom: 200px; }
+}
+[data-testid="stChatMessage"]:last-of-type {
+  scroll-margin-bottom: 200px;
+  animation: scrollAnchor 0.1s;
 }
 
 [data-testid="stChatInput"] > div,
