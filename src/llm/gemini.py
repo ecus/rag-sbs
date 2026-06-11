@@ -41,8 +41,9 @@ def _delay_de_429(exc: Exception) -> float | None:
     return None
 
 
-async def _con_retry(fn, *, max_intentos: int = 4, base_delay: float = 2.0):
-    """Ejecuta ``fn`` con retry exponencial para 429 RESOURCE_EXHAUSTED.
+async def _con_retry(fn, *, max_intentos: int = 5, base_delay: float = 2.0):
+    """Ejecuta ``fn`` con retry exponencial para 429 RESOURCE_EXHAUSTED y
+    503 UNAVAILABLE (modelo sobrecargado).
 
     Si detecta agotamiento del quota DIARIO (mensaje "embed_content_free_tier
     _requests" o "RequestsPerDayPerProjectPerModel-FreeTier"), aborta sin
@@ -51,24 +52,36 @@ async def _con_retry(fn, *, max_intentos: int = 4, base_delay: float = 2.0):
     for intento in range(max_intentos):
         try:
             return await fn()
-        except genai_errors.ClientError as exc:
-            if getattr(exc, "code", None) != 429:
-                raise
+        except Exception as exc:  # noqa: BLE001
+            # Detectar el código de error (puede venir como ClientError,
+            # ServerError, o cualquier subclase de APIError del SDK)
+            codigo = getattr(exc, "code", None)
             msg = str(exc)
+            es_429 = codigo == 429 or "429" in msg or "RESOURCE_EXHAUSTED" in msg
+            es_503 = (
+                codigo == 503
+                or "503" in msg
+                or "UNAVAILABLE" in msg
+                or "high demand" in msg.lower()
+                or "overloaded" in msg.lower()
+            )
+            if not (es_429 or es_503):
+                raise
             # Si es quota DIARIO agotado, no hay caso reintentar
             if "RequestsPerDay" in msg or "free_tier_requests" in msg:
                 logger.error(
-                    "Gemini quota diario agotado — abortar (espera reset 24h o "
-                    "activar Tier 1 pagado por $5)"
+                    "Gemini quota diario agotado — abortar (espera reset 24h "
+                    "o activar Tier 1 pagado por $5)"
                 )
                 raise
-            sugerido = _delay_de_429(exc)
+            sugerido = _delay_de_429(exc) if es_429 else None
             if sugerido is None:
                 sugerido = base_delay * (2 ** intento)
-            sugerido += random.uniform(0, 1)
+            sugerido += random.uniform(0, 1.5)
+            tipo = "429 RPM" if es_429 else "503 UNAVAILABLE"
             logger.warning(
-                "Gemini 429 RPM (intento %d/%d) — esperando %.1fs",
-                intento + 1, max_intentos, sugerido,
+                "Gemini %s (intento %d/%d) — esperando %.1fs",
+                tipo, intento + 1, max_intentos, sugerido,
             )
             if intento == max_intentos - 1:
                 raise
@@ -227,8 +240,11 @@ class GeminiProvider(LLMProvider):
                     chunks.append(txt)
             return chunks
 
+        async def _ejecutar() -> list[str]:
+            return await loop.run_in_executor(None, _materializar)
+
         try:
-            chunks = await loop.run_in_executor(None, _materializar)
+            chunks = await _con_retry(_ejecutar)
         except Exception as exc:  # noqa: BLE001
             logger.error("Gemini generate_stream falló: %s", exc)
             raise

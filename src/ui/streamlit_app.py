@@ -253,8 +253,53 @@ def _procesar_streaming(
             error = str(exc)
 
         if error:
-            status.update(label="❌ Error", state="error", expanded=True)
-            placeholder_texto.error(f"Falló el streaming: {error}")
+            status.update(label="❌ Error del LLM", state="error", expanded=True)
+            err_lower = error.lower()
+            is_503 = "503" in error or "unavailable" in err_lower or "high demand" in err_lower
+            is_429 = "429" in error or "quota" in err_lower or "rate" in err_lower
+            is_timeout = "timeout" in err_lower or "timed out" in err_lower
+
+            if is_503:
+                titulo = "🌐 El modelo (Gemini) está sobrecargado"
+                explicacion = (
+                    "Google reporta alta demanda en el LLM. **No es un problema de la app** "
+                    "ni de tus datos — es del lado de Google y suele durar 1-5 minutos."
+                )
+                que_hacer = "Esperá ~2 min y reintentá la misma consulta."
+            elif is_429:
+                titulo = "🚦 Límite de cuota alcanzado"
+                explicacion = (
+                    "Se excedió la cuota gratuita por minuto del LLM."
+                )
+                que_hacer = "Esperá ~60 segundos y reintentá."
+            elif is_timeout:
+                titulo = "⏱ Timeout durante la generación"
+                explicacion = "La generación tardó más del límite configurado."
+                que_hacer = "Reintentá; si pasa seguido, desactivá modo Informe."
+            else:
+                titulo = "❌ Error durante la generación"
+                explicacion = "El backend no pudo completar la respuesta."
+                que_hacer = "Reintentá. Si persiste, contactá al admin."
+
+            placeholder_texto.markdown(
+                f'<div style="background:#fef2f2;border:2px solid #f87171;'
+                f'border-radius:10px;padding:18px 20px;margin:12px 0;">'
+                f'<div style="font-size:18px;font-weight:700;color:#991b1b;'
+                f'margin-bottom:8px;">{titulo}</div>'
+                f'<div style="color:#7f1d1d;font-size:14px;line-height:1.6;'
+                f'margin-bottom:10px;">{explicacion}</div>'
+                f'<div style="color:#1f2937;font-size:14px;background:#fff;'
+                f'padding:10px 12px;border-radius:6px;border-left:4px solid #2563eb;">'
+                f'<b>👉 Qué hacer:</b> {que_hacer}</div>'
+                f'<details style="margin-top:10px;color:#6b7280;font-size:11px;">'
+                f'<summary style="cursor:pointer;">Detalle técnico</summary>'
+                f'<code style="font-size:11px;display:block;margin-top:6px;'
+                f'background:#f3f4f6;padding:8px;border-radius:4px;'
+                f'white-space:pre-wrap;word-break:break-all;">{error}</code>'
+                f'</details>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
             return
 
         # Texto final con resaltado de [Fuente N]
