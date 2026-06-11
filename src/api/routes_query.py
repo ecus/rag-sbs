@@ -18,7 +18,7 @@ from uuid import uuid4
 
 import json as _json
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 logger = logging.getLogger(__name__)
 from fastapi.responses import StreamingResponse
@@ -34,6 +34,7 @@ from src.agents.query_rewriter import (
     reescribir_consulta,
 )
 from src.core.deps import get_llm, get_pool
+from src.core.security import _ip_cliente, limitar_query
 from src.graph.expander import expandir_por_grafo, fusionar_y_rankear
 from src.llm import LLMProvider
 from src.rag.reranker import rerank_con_vias
@@ -347,8 +348,10 @@ def _confianza_final(fragmentos: list, respuesta_texto: str) -> str:
 @router.post("/v1/query", response_model=QueryResponse)
 async def query(
     payload: QueryRequest,
+    request: Request,
     pool: AsyncConnectionPool = Depends(get_pool),
     llm: LLMProvider = Depends(get_llm),
+    _rl: None = Depends(limitar_query),
 ) -> QueryResponse:
     """Consulta RAG vanilla — Sprint 1."""
     inicio = time.perf_counter()
@@ -578,6 +581,7 @@ async def query(
                     }
                     for f in fuentes[:8]
                 ],
+                client_ip=_ip_cliente(request),
             )
         except Exception:  # noqa: BLE001
             pass
@@ -605,6 +609,7 @@ async def query(
 async def planear(
     payload: PlanRequest,
     llm: LLMProvider = Depends(get_llm),
+    _rl: None = Depends(limitar_query),
 ) -> PlanResponse:
     """LLM-as-planner: evalúa si el query tiene contexto suficiente.
 
@@ -644,8 +649,10 @@ def _sse(event: str, data: dict | str) -> str:
 @router.post("/v1/query/stream")
 async def query_stream(
     payload: QueryRequest,
+    request: Request,
     pool: AsyncConnectionPool = Depends(get_pool),
     llm: LLMProvider = Depends(get_llm),
+    _rl: None = Depends(limitar_query),
 ) -> StreamingResponse:
     """Versión streaming de /v1/query.
 
@@ -880,13 +887,18 @@ async def query_stream(
                             }
                             for f in fragmentos[:8]
                         ],
+                        client_ip=_ip_cliente(request),
                     )
                 except Exception:  # noqa: BLE001
                     pass
 
             yield _sse("done", {})
         except Exception as exc:  # noqa: BLE001
-            yield _sse("error", {"message": str(exc), "type": type(exc).__name__})
+            # No filtrar detalles internos al cliente: solo lo necesario
+            # para que la UI clasifique el error (503/429/timeout).
+            msg = str(exc)[:300]
+            logger.exception("query_stream falló (trace_id=%s)", trace_id)
+            yield _sse("error", {"message": msg, "type": type(exc).__name__})
 
     return StreamingResponse(
         generador(),

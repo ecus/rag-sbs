@@ -122,17 +122,25 @@ def render_auth(api_base: str) -> None:
                 placeholder="usuario@empresa.com",
                 key="login_email",
             )
+            pin_in = st.text_input(
+                "PIN (4-8 dígitos)",
+                type="password",
+                max_chars=8,
+                key="login_pin",
+            )
             submitted = st.form_submit_button(
                 "Iniciar sesión", type="primary", use_container_width=True
             )
             if submitted:
                 if not _email_valido(email_in):
                     st.error("Por favor ingrese un email válido.")
+                elif not (pin_in or "").strip().isdigit() or not (4 <= len(pin_in.strip()) <= 8):
+                    st.error("El PIN debe tener entre 4 y 8 dígitos.")
                 else:
                     try:
                         r = httpx.post(
                             f"{api_base}/v1/users/login",
-                            json={"email": email_in.strip()},
+                            json={"email": email_in.strip(), "pin": pin_in.strip()},
                             timeout=8,
                         )
                         if r.status_code == 200:
@@ -144,13 +152,14 @@ def render_auth(api_base: str) -> None:
                             st.session_state.last_activity_at = datetime.now()
                             st.session_state.queries_this_session = 0
                             st.session_state.historial_chat = []
-                            st.session_state.memoria_disponible = None
+                            # Memoria viene en el login (autenticada por PIN)
+                            st.session_state.memoria_disponible = data.get("memory") or []
                             st.toast(f"Bienvenido/a {data['user']['name']}", icon="👋")
                             st.rerun()
-                        elif r.status_code == 404:
-                            st.warning(
-                                "Email no registrado. Use la pestaña **Registrarse**."
-                            )
+                        elif r.status_code == 401:
+                            st.error("Email o PIN incorrectos.")
+                        elif r.status_code == 429:
+                            st.warning("Demasiados intentos. Espere un minuto y reintente.")
                         else:
                             st.error(f"Error: {r.text}")
                     except Exception as e:  # noqa: BLE001
@@ -172,6 +181,13 @@ def render_auth(api_base: str) -> None:
                     key="reg_name",
                 )
             with col2:
+                pin_reg = st.text_input(
+                    "PIN (4-8 dígitos) *",
+                    type="password",
+                    max_chars=8,
+                    help="Lo usará para iniciar sesión. Solo números.",
+                    key="reg_pin",
+                )
                 org_in = st.text_input(
                     "Organización (opcional)",
                     placeholder="ej. Banco XYZ",
@@ -204,6 +220,8 @@ def render_auth(api_base: str) -> None:
                     st.error("Por favor ingrese un email válido.")
                 elif not (name_in or "").strip():
                     st.error("Por favor ingrese su nombre.")
+                elif not (pin_reg or "").strip().isdigit() or not (4 <= len(pin_reg.strip()) <= 8):
+                    st.error("El PIN debe tener entre 4 y 8 dígitos (solo números).")
                 else:
                     try:
                         r = httpx.post(
@@ -211,6 +229,7 @@ def render_auth(api_base: str) -> None:
                             json={
                                 "email": email_in.strip(),
                                 "name": name_in.strip(),
+                                "pin": pin_reg.strip(),
                                 "organization": (org_in or "").strip() or None,
                                 "role": role_in or None,
                             },
@@ -225,7 +244,7 @@ def render_auth(api_base: str) -> None:
                             st.session_state.last_activity_at = datetime.now()
                             st.session_state.queries_this_session = 0
                             st.session_state.historial_chat = []
-                            st.session_state.memoria_disponible = None
+                            st.session_state.memoria_disponible = []
                             st.toast("Cuenta creada ✓", icon="✅")
                             st.rerun()
                         elif r.status_code == 409:
@@ -233,6 +252,8 @@ def render_auth(api_base: str) -> None:
                                 "Este email ya está registrado. Use la pestaña "
                                 "**Iniciar sesión**."
                             )
+                        elif r.status_code == 429:
+                            st.warning("Demasiados intentos. Espere un minuto y reintente.")
                         else:
                             try:
                                 detail = r.json().get("detail", r.text)
@@ -243,10 +264,38 @@ def render_auth(api_base: str) -> None:
                         st.error(f"No se pudo conectar al servidor: {e}")
 
     st.caption(
-        "🔒 Política: el email se usa solo para identificar consultas y métricas "
-        "de calidad. La sesión se cierra automáticamente tras "
-        f"**{INACTIVITY_LIMIT_SEC // 60} min** de inactividad."
+        "🔒 **Política de datos** (Ley 29733): el email se usa únicamente para "
+        "identificar sus consultas y medir la calidad del servicio. No se comparte "
+        "ni se usa para comunicaciones. Sus consultas se registran con ese fin. "
+        f"La sesión se cierra tras **{INACTIVITY_LIMIT_SEC // 60} min** de "
+        "inactividad. Puede eliminar todos sus datos cuando quiera (abajo)."
     )
+
+    with st.expander("🗑 Eliminar mi cuenta y todos mis datos"):
+        st.caption(
+            "Borra su usuario y todo su historial de consultas. Las encuestas "
+            "que haya respondido se conservan **anonimizadas** (sin email)."
+        )
+        with st.form("form_delete_me"):
+            del_email = st.text_input("Email", key="del_email")
+            del_pin = st.text_input("PIN", type="password", max_chars=8, key="del_pin")
+            del_ok = st.form_submit_button("Eliminar definitivamente", type="secondary")
+        if del_ok:
+            try:
+                r = httpx.post(
+                    f"{api_base}/v1/users/me/delete",
+                    json={"email": (del_email or "").strip(), "pin": (del_pin or "").strip()},
+                    timeout=8,
+                )
+                if r.status_code == 200:
+                    st.success("Sus datos fueron eliminados. Gracias por usar la herramienta.")
+                elif r.status_code == 401:
+                    st.error("Email o PIN incorrectos.")
+                else:
+                    st.error("No se pudo completar la eliminación. Reintente más tarde.")
+            except Exception as e:  # noqa: BLE001
+                st.error(f"No se pudo conectar al servidor: {e}")
+
     st.stop()
 
 
@@ -409,6 +458,7 @@ def _logout_final() -> None:
     for k in [
         "user",
         "user_alias",
+        "admin_key",
         "session_started_at",
         "last_activity_at",
         "queries_this_session",

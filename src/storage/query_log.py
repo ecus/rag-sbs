@@ -44,6 +44,7 @@ async def log_query(
     tokens_out: int | None = None,
     options: dict[str, Any] | None = None,
     sources_summary: list[dict] | None = None,
+    client_ip: str | None = None,
 ) -> UUID | None:
     """Registra una consulta + respuesta en query_log."""
     if not alias:
@@ -55,8 +56,9 @@ async def log_query(
                     """
                     INSERT INTO query_log
                       (alias, query_text, answer_text, confidence, n_sources,
-                       latency_ms, tokens_in, tokens_out, options, sources_summary)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                       latency_ms, tokens_in, tokens_out, options, sources_summary,
+                       client_ip)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id
                     """,
                     (
@@ -64,6 +66,7 @@ async def log_query(
                         latency_ms, tokens_in, tokens_out,
                         Jsonb(options or {}),
                         Jsonb(sources_summary or []),
+                        client_ip,
                     ),
                 )
                 row = await cur.fetchone()

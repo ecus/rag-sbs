@@ -15,6 +15,25 @@ class APIClient:
         self.base_url = (base_url or os.getenv("API_URL", "http://api:8000")).rstrip("/")
         self._client = httpx.Client(timeout=timeout_sec)
 
+    def set_admin_key(self, key: str | None) -> None:
+        """Activa/desactiva el header X-Admin-Key para endpoints de admin."""
+        if key:
+            self._client.headers["X-Admin-Key"] = key
+        else:
+            self._client.headers.pop("X-Admin-Key", None)
+
+    def verificar_admin_key(self, key: str) -> bool:
+        """Prueba la clave contra un endpoint admin liviano."""
+        try:
+            r = self._client.get(
+                f"{self.base_url}/v1/analytics/users?limit=1",
+                headers={"X-Admin-Key": key},
+                timeout=5,
+            )
+            return r.status_code == 200
+        except Exception:  # noqa: BLE001
+            return False
+
     # ------ Analytics ---------------------------------------------------------
 
     def analytics_users(self, limit: int = 50) -> list[dict]:

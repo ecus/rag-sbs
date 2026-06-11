@@ -88,6 +88,12 @@ def obtener_cliente() -> APIClient:
 
 api = obtener_cliente()
 
+# El cliente cacheado es COMPARTIDO entre sesiones — nunca setearle la admin
+# key. Si esta sesión está en modo admin, usar un cliente propio con el header.
+if st.session_state.get("admin_key"):
+    api = APIClient()
+    api.set_admin_key(st.session_state.admin_key)
+
 
 # =========================================================================
 # Sesión: registro/login con email + timeout 5 min + encuesta de salida
@@ -104,21 +110,7 @@ if esta_logueado() and chequear_timeout():
     disparar_logout_con_encuesta(reason="timeout")
     st.rerun()
 
-# 4) Memoria persistente: si recién logueó, ofrecer cargar historial previo
-if esta_logueado() and st.session_state.get("memoria_disponible") is None:
-    try:
-        import httpx as _httpx
-        rmem = _httpx.get(
-            f"{api.base_url}/v1/analytics/user/{st.session_state.user_alias}/memory?limit=20",
-            timeout=5,
-        )
-        if rmem.status_code == 200:
-            st.session_state.memoria_disponible = rmem.json() or []
-        else:
-            st.session_state.memoria_disponible = []
-    except Exception:  # noqa: BLE001
-        st.session_state.memoria_disponible = []
-
+# 4) Memoria persistente: viene en la respuesta del login (autenticada por PIN)
 memoria_dispo = st.session_state.get("memoria_disponible") or []
 n_turnos_mem = sum(1 for m in memoria_dispo if m.get("rol") == "user")
 if (
@@ -520,9 +512,30 @@ with st.sidebar:
             pass
 
         st.markdown("---")
-        if st.button("🔧 Modo técnico", use_container_width=True,
-                     help="Ver detalles del sistema, ingesta, comparación A/B"):
-            st.session_state.modo_tecnico = True
+        # Modo técnico requiere la clave de administración
+        if st.session_state.get("pedir_admin_key"):
+            admin_key_in = st.text_input(
+                "Clave de administración",
+                type="password",
+                key="admin_key_input",
+            )
+            col_ak1, col_ak2 = st.columns(2)
+            if col_ak1.button("Entrar", use_container_width=True, type="primary",
+                              key="admin_key_go"):
+                if admin_key_in and api.verificar_admin_key(admin_key_in.strip()):
+                    st.session_state.admin_key = admin_key_in.strip()
+                    st.session_state.modo_tecnico = True
+                    st.session_state.pedir_admin_key = False
+                    st.rerun()
+                else:
+                    st.error("Clave inválida.")
+            if col_ak2.button("Cancelar", use_container_width=True,
+                              key="admin_key_cancel"):
+                st.session_state.pedir_admin_key = False
+                st.rerun()
+        elif st.button("🔧 Modo técnico", use_container_width=True,
+                       help="Dashboard de administración (requiere clave)"):
+            st.session_state.pedir_admin_key = True
             st.rerun()
         st.caption(
             '<div style="font-size:10px;color:#94a3b8;text-align:center;'
@@ -533,6 +546,7 @@ with st.sidebar:
         # ----- MODO TÉCNICO: dashboard admin -----
         if st.button("← Volver a modo usuario", use_container_width=True):
             st.session_state.modo_tecnico = False
+            st.session_state.admin_key = None  # soltar credencial al salir
             st.rerun()
 
         st.markdown("### 🔍 Estado del sistema")

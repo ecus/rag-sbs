@@ -36,10 +36,13 @@ async def registrar_usuario(
     *,
     email: str,
     name: str,
+    pin: str,
     organization: str | None = None,
     role: str | None = None,
 ) -> tuple[str | None, str | None]:
-    """Crea un usuario nuevo. Retorna (user_id, error)."""
+    """Crea un usuario nuevo con PIN. Retorna (user_id, error)."""
+    from src.core.security import hashear_pin, pin_valido
+
     email = (email or "").strip()
     name = (name or "").strip()
 
@@ -47,17 +50,19 @@ async def registrar_usuario(
         return None, "email_invalido"
     if not name:
         return None, "nombre_requerido"
+    if not pin_valido(pin):
+        return None, "pin_invalido"
 
     try:
         async with pool.connection() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
                     """
-                    INSERT INTO users (email, name, organization, role)
-                    VALUES (%s, %s, %s, %s)
+                    INSERT INTO users (email, name, organization, role, pin_hash)
+                    VALUES (%s, %s, %s, %s, %s)
                     RETURNING id
                     """,
-                    (email, name, organization, role),
+                    (email, name, organization, role, hashear_pin(pin.strip())),
                 )
                 row = await cur.fetchone()
                 return (str(row[0]) if row else None), None
@@ -69,27 +74,56 @@ async def registrar_usuario(
 
 
 async def login_usuario(
-    pool: AsyncConnectionPool, email: str
-) -> dict | None:
-    """Hace login por email. Actualiza last_login y n_sessions."""
-    if not email_valido(email):
-        return None
+    pool: AsyncConnectionPool, email: str, pin: str
+) -> tuple[dict | None, str | None]:
+    """Login con email + PIN. Retorna (perfil, error).
+
+    Bootstrap: si el usuario existe pero no tiene PIN (legacy de la
+    migración 006), el primer login fija el PIN provisto.
+    """
+    from src.core.security import hashear_pin, pin_valido, verificar_pin
+
+    if not email_valido(email) or not pin_valido(pin):
+        return None, "credenciales_invalidas"
+
     async with pool.connection() as conn:
         async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT id, pin_hash FROM users
+                WHERE LOWER(email) = LOWER(%s)
+                """,
+                (email,),
+            )
+            row = await cur.fetchone()
+            if not row:
+                # Mensaje genérico — no revelar si el email existe
+                return None, "credenciales_invalidas"
+            uid, pin_hash = str(row[0]), row[1]
+
+            if pin_hash is None:
+                # Usuario legacy: el primer login define su PIN
+                await cur.execute(
+                    "UPDATE users SET pin_hash = %s WHERE id = %s",
+                    (hashear_pin(pin.strip()), uid),
+                )
+            elif not verificar_pin(pin.strip(), pin_hash):
+                return None, "credenciales_invalidas"
+
             await cur.execute(
                 """
                 UPDATE users
                 SET last_login_at = NOW(),
                     last_activity_at = NOW(),
                     n_sessions = n_sessions + 1
-                WHERE LOWER(email) = LOWER(%s)
+                WHERE id = %s
                 RETURNING id, email, name, organization, role, n_queries_total
                 """,
-                (email,),
+                (uid,),
             )
             row = await cur.fetchone()
             if not row:
-                return None
+                return None, "credenciales_invalidas"
             return {
                 "id": str(row[0]),
                 "email": row[1],
@@ -97,7 +131,51 @@ async def login_usuario(
                 "organization": row[3],
                 "role": row[4],
                 "n_queries_total": int(row[5] or 0),
-            }
+            }, None
+
+
+async def borrar_usuario(
+    pool: AsyncConnectionPool, email: str, pin: str
+) -> tuple[bool, str | None]:
+    """Borra al usuario y sus consultas (derecho de supresión, Ley 29733).
+
+    Las encuestas se conservan anonimizadas (user_id queda NULL por el FK
+    ON DELETE SET NULL; el email denormalizado se limpia explícitamente).
+    """
+    from src.core.security import pin_valido, verificar_pin
+
+    if not email_valido(email) or not pin_valido(pin):
+        return False, "credenciales_invalidas"
+
+    async with pool.connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "SELECT id, pin_hash FROM users WHERE LOWER(email) = LOWER(%s)",
+                (email,),
+            )
+            row = await cur.fetchone()
+            if not row or not verificar_pin(pin.strip(), row[1]):
+                return False, "credenciales_invalidas"
+            uid = str(row[0])
+
+            # Anonimizar encuestas (conservar métricas agregadas sin PII)
+            await cur.execute(
+                "UPDATE feedback_surveys SET email = NULL WHERE user_id = %s",
+                (uid,),
+            )
+            # Borrar historial de consultas (alias = email en query_log)
+            await cur.execute(
+                "DELETE FROM query_log WHERE LOWER(alias) = LOWER(%s)",
+                (email,),
+            )
+            await cur.execute(
+                "DELETE FROM user_sessions WHERE LOWER(alias) = LOWER(%s)",
+                (email,),
+            )
+            # Borrar el usuario (FK pone user_id NULL en surveys)
+            await cur.execute("DELETE FROM users WHERE id = %s", (uid,))
+            logger.info("Usuario %s eliminado a pedido (derecho de supresión)", uid)
+            return True, None
 
 
 async def tocar_actividad(pool: AsyncConnectionPool, user_id: str) -> None:

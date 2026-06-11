@@ -59,6 +59,8 @@ services:
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
       JWT_SECRET: ${JWT_SECRET}
+      ADMIN_API_KEY: ${ADMIN_API_KEY}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
     volumes:
       - rag-objects:/var/lib/rag-sbs/objects
     depends_on:
