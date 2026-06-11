@@ -382,8 +382,10 @@ def _procesar_streaming(
             )
             st.markdown(html, unsafe_allow_html=True)
 
-        # Guardar en historial
-        if es_input_directo:
+        # Guardar en historial siempre que haya respuesta válida (input directo
+        # o consulta extendida desde acrónimo/planner). Solo no guardamos
+        # cuando hubo error y no hay texto útil.
+        if respuesta_final and not error:
             state.historial_chat.append({
                 "rol": "assistant",
                 "texto": respuesta_final,
@@ -857,14 +859,23 @@ with tab_chat:
         st.session_state.acronimo_resuelto = False
 
     if pregunta:
-        # Si NO viene de un planner previo, registrar como turno user
-        if consulta_input:
+        # Reset flag para próxima consulta (siempre que entremos a procesar)
+        st.session_state.acronimo_resuelto = False
+
+        # Renderizar bubble del usuario SIEMPRE — sea input directo,
+        # consulta extendida desde acrónimo, o desde planner
+        if consulta_input or st.session_state.get("pregunta_pendiente_acronimo"):
+            texto_usuario = consulta_input or pregunta
             st.session_state.historial_chat.append(
-                {"rol": "user", "texto": consulta_input}
+                {"rol": "user", "texto": texto_usuario}
             )
             with st.chat_message("user"):
-                st.markdown(consulta_input)
+                st.markdown(texto_usuario)
+            # Limpiar marcador de acrónimo pendiente
+            st.session_state.pregunta_pendiente_acronimo = None
 
+        # Si es input directo, opcionalmente correr planner
+        if consulta_input:
             # Rama 1: agente planner activo → consulta plan primero
             if usar_planner:
                 with st.chat_message("assistant"):
@@ -883,8 +894,11 @@ with tab_chat:
                     st.rerun()
 
         # Historial para el backend (excluyendo el turno actual recién agregado)
+        # El último mensaje siempre es la pregunta actual del usuario
         historial_backend = _historial_para_backend(
-            st.session_state.historial_chat[:-1] if consulta_input
+            st.session_state.historial_chat[:-1]
+            if st.session_state.historial_chat
+            and st.session_state.historial_chat[-1].get("rol") == "user"
             else st.session_state.historial_chat
         ) if usar_memoria else []
 
