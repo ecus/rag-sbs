@@ -817,33 +817,51 @@ with tab_chat:
             ambiguedades = []
 
         if ambiguedades and not st.session_state.get("acronimo_resuelto"):
+            # Guardamos la pregunta original para usar después de resolver
             st.session_state.pregunta_pendiente_acronimo = pregunta
             st.warning(
                 f"⚠️ Detecté **{len(ambiguedades)} acrónimo(s) ambiguo(s)** en tu pregunta. "
                 f"¿A cuál te referís?"
             )
-            for amb in ambiguedades:
-                st.markdown(f"**Para `{amb['sigla']}` elegí una opción:**")
-                for op in amb["opciones"]:
-                    label = f"**{op['significado']}** — {op['contexto']}"
-                    if op.get("norma_principal"):
-                        label += f" · _{op['norma_principal']}_"
-                    if st.button(label, key=f"acro_{amb['sigla']}_{op['significado'][:20]}",
-                                 use_container_width=True):
-                        # Reemplazar la sigla con su forma extendida
-                        pregunta_extendida = pregunta.replace(
-                            amb["sigla"],
-                            f"{amb['sigla']} ({op['significado']})",
-                            1,
+            # Form con radios — más robusto que botones sueltos en for-loop
+            with st.form("form_acronimos", clear_on_submit=False):
+                selecciones: dict[str, str] = {}
+                for amb in ambiguedades:
+                    st.markdown(f"**`{amb['sigla']}` — elegí significado:**")
+                    opciones_labels = []
+                    opciones_map = {}
+                    for op in amb["opciones"]:
+                        label = f"{op['significado']} — {op['contexto']}"
+                        if op.get("norma_principal"):
+                            label += f" · {op['norma_principal']}"
+                        opciones_labels.append(label)
+                        opciones_map[label] = op["significado"]
+                    opciones_labels.append(f"(no especificar, usar `{amb['sigla']}` tal cual)")
+                    choice = st.radio(
+                        f"Opciones para {amb['sigla']}",
+                        opciones_labels,
+                        index=0,
+                        label_visibility="collapsed",
+                        key=f"acro_radio_{amb['sigla']}",
+                    )
+                    selecciones[amb["sigla"]] = opciones_map.get(choice, "")
+
+                submitted = st.form_submit_button(
+                    "▶️ Continuar con la consulta",
+                    type="primary",
+                    use_container_width=True,
+                )
+
+            if submitted:
+                pregunta_extendida = pregunta
+                for sigla, significado in selecciones.items():
+                    if significado:
+                        pregunta_extendida = pregunta_extendida.replace(
+                            sigla, f"{sigla} ({significado})", 1
                         )
-                        st.session_state.consulta_pendiente = pregunta_extendida
-                        st.session_state.acronimo_resuelto = True
-                        st.rerun()
-                if st.button(f"➡️ Continuar tal cual (`{amb['sigla']}` sin elegir)",
-                             key=f"acro_{amb['sigla']}_skip"):
-                    st.session_state.acronimo_resuelto = True
-                    st.session_state.consulta_pendiente = pregunta
-                    st.rerun()
+                st.session_state.consulta_pendiente = pregunta_extendida
+                st.session_state.acronimo_resuelto = True
+                st.rerun()
             st.stop()
 
         # Reset flag para próxima consulta
