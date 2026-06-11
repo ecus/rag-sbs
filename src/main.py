@@ -15,6 +15,7 @@ from src.api import (
     routes_ingest,
     routes_ingest_scan,
     routes_query,
+    routes_users,
 )
 from src.core.deps import lifespan
 
@@ -51,6 +52,7 @@ def create_app() -> FastAPI:
     app.include_router(routes_graph.router)
     app.include_router(routes_background.router)
     app.include_router(routes_analytics.router)
+    app.include_router(routes_users.router)
 
     return app
 

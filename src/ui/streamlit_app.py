@@ -14,6 +14,15 @@ import pandas as pd
 import streamlit as st
 
 from src.ui.api_client import APIClient
+from src.ui.auth_ui import (
+    INACTIVITY_LIMIT_SEC,
+    chequear_timeout,
+    disparar_logout_con_encuesta,
+    esta_logueado,
+    render_auth,
+    render_survey,
+    tocar_actividad,
+)
 from src.ui.styles import (
     badge_confianza,
     badge_via,
@@ -69,94 +78,8 @@ render_header()
 
 
 # =========================================================================
-# Sesión de usuario (alias) — análisis por usuario + memoria persistente
+# Cliente API (definido antes del auth para que render_auth pueda usarlo)
 # =========================================================================
-
-if "user_alias" not in st.session_state:
-    st.session_state.user_alias = None
-
-if not st.session_state.user_alias:
-    with st.container():
-        st.markdown(
-            '<div style="background:linear-gradient(135deg,#eff6ff,#dbeafe);'
-            'border:1px solid #93c5fd;border-radius:12px;padding:20px;'
-            'margin:8px 0 16px;">'
-            '<div style="font-size:24px;margin-bottom:8px;">👤 Identifíquese</div>'
-            '<div style="color:#1e3a8a;font-size:13px;line-height:1.5;">'
-            'Ingrese un alias o nombre para esta sesión. Con esto se recuerdan '
-            'sus consultas anteriores y se pueden analizar patrones de uso.'
-            '</div></div>',
-            unsafe_allow_html=True,
-        )
-        col_a, col_b = st.columns([3, 1])
-        with col_a:
-            alias_input = st.text_input(
-                "Alias o nombre",
-                placeholder="ej. erik, compliance_team, juan_perez",
-                label_visibility="collapsed",
-                key="alias_input_field",
-            )
-        with col_b:
-            if st.button("Comenzar", type="primary", use_container_width=True):
-                if alias_input and alias_input.strip():
-                    alias_limpio = alias_input.strip()[:60]
-                    try:
-                        import httpx as _httpx
-                        _httpx.post(
-                            f"{obtener_cliente().base_url}/v1/analytics/session",
-                            json={"alias": alias_limpio},
-                            timeout=5,
-                        )
-                    except Exception:  # noqa: BLE001
-                        pass
-                    st.session_state.user_alias = alias_limpio
-                    # NO cargar memoria automáticamente. Si el alias tiene
-                    # historial, mostrar opción para que el usuario decida.
-                    st.session_state.historial_chat = []
-                    st.session_state.memoria_disponible = None  # se calcula al rerun
-                    st.rerun()
-                else:
-                    st.warning("Por favor ingrese un alias.")
-        st.stop()
-
-    # Si recién logueó, chequear si tiene historial previo y ofrecer cargarlo
-    if st.session_state.get("memoria_disponible") is None:
-        try:
-            import httpx as _httpx
-            cliente_tmp = obtener_cliente()
-            rmem = _httpx.get(
-                f"{cliente_tmp.base_url}/v1/analytics/user/{st.session_state.user_alias}/memory?limit=20",
-                timeout=5,
-            )
-            if rmem.status_code == 200:
-                st.session_state.memoria_disponible = rmem.json() or []
-            else:
-                st.session_state.memoria_disponible = []
-        except Exception:  # noqa: BLE001
-            st.session_state.memoria_disponible = []
-
-    memoria_dispo = st.session_state.memoria_disponible or []
-    n_turnos = sum(1 for m in memoria_dispo if m.get("rol") == "user")
-    if memoria_dispo and not st.session_state.get("memoria_decidida"):
-        st.info(
-            f"📚 Encontré **{n_turnos} consulta(s) anteriores** para "
-            f"**{st.session_state.user_alias}**. ¿Cargarlas como memoria?"
-        )
-        col_m1, col_m2 = st.columns(2)
-        with col_m1:
-            if st.button(f"📚 Sí, cargar {n_turnos} consulta(s)",
-                         use_container_width=True, type="primary"):
-                st.session_state.historial_chat = memoria_dispo
-                st.session_state.memoria_decidida = True
-                st.toast("Memoria cargada", icon="✅")
-                st.rerun()
-        with col_m2:
-            if st.button("🆕 No, empezar limpio",
-                         use_container_width=True):
-                st.session_state.memoria_decidida = True
-                st.rerun()
-        st.stop()
-
 
 @st.cache_resource
 def obtener_cliente() -> APIClient:
@@ -164,6 +87,67 @@ def obtener_cliente() -> APIClient:
 
 
 api = obtener_cliente()
+
+
+# =========================================================================
+# Sesión: registro/login con email + timeout 5 min + encuesta de salida
+# =========================================================================
+
+# 1) Si hay encuesta pendiente, mostrarla y bloquear el resto de la UI
+render_survey(api.base_url)
+
+# 2) Si no hay usuario logueado, pedir login/registro y bloquear
+render_auth(api.base_url)
+
+# 3) Si la sesión expiró por inactividad → disparar encuesta
+if esta_logueado() and chequear_timeout():
+    disparar_logout_con_encuesta(reason="timeout")
+    st.rerun()
+
+# 4) Memoria persistente: si recién logueó, ofrecer cargar historial previo
+if esta_logueado() and st.session_state.get("memoria_disponible") is None:
+    try:
+        import httpx as _httpx
+        rmem = _httpx.get(
+            f"{api.base_url}/v1/analytics/user/{st.session_state.user_alias}/memory?limit=20",
+            timeout=5,
+        )
+        if rmem.status_code == 200:
+            st.session_state.memoria_disponible = rmem.json() or []
+        else:
+            st.session_state.memoria_disponible = []
+    except Exception:  # noqa: BLE001
+        st.session_state.memoria_disponible = []
+
+memoria_dispo = st.session_state.get("memoria_disponible") or []
+n_turnos_mem = sum(1 for m in memoria_dispo if m.get("rol") == "user")
+if (
+    esta_logueado()
+    and memoria_dispo
+    and not st.session_state.get("memoria_decidida")
+):
+    st.info(
+        f"📚 Encontré **{n_turnos_mem} consulta(s) anteriores** para "
+        f"**{st.session_state.user['name']}**. ¿Cargarlas como memoria?"
+    )
+    col_m1, col_m2 = st.columns(2)
+    with col_m1:
+        if st.button(f"📚 Sí, cargar {n_turnos_mem} consulta(s)",
+                     use_container_width=True, type="primary"):
+            st.session_state.historial_chat = memoria_dispo
+            st.session_state.memoria_decidida = True
+            st.toast("Memoria cargada", icon="✅")
+            st.rerun()
+    with col_m2:
+        if st.button("🆕 No, empezar limpio",
+                     use_container_width=True):
+            st.session_state.memoria_decidida = True
+            st.rerun()
+    st.stop()
+
+# 5) Marcar actividad en cada rerun (resetea timeout)
+if esta_logueado():
+    tocar_actividad(api.base_url)
 
 
 # ---------------------------------------------------------------------------
@@ -424,22 +408,29 @@ with st.sidebar:
     )
 
     # Indicador de sesión activa (siempre visible)
-    if st.session_state.get("user_alias"):
+    if esta_logueado():
+        _u = st.session_state.user
+        # Tiempo restante de inactividad
+        _last = st.session_state.get("last_activity_at")
+        _restante = ""
+        if _last:
+            _seg = max(0, int(INACTIVITY_LIMIT_SEC - (datetime.now() - _last).total_seconds()))
+            _restante = f" · ⏳ {_seg//60}m {_seg%60:02d}s"
         st.markdown(
             f'<div style="background:#f0fdf4;border:1px solid #86efac;'
             f'border-radius:8px;padding:8px 12px;margin-bottom:12px;'
             f'font-size:12px;color:#166534;">'
-            f'👤 <b>{st.session_state.user_alias}</b><br>'
+            f'👤 <b>{_u.get("name","")}</b><br>'
             f'<span style="color:#475569;font-size:10px;">'
-            f'Sus consultas se registran para análisis y memoria.</span>'
+            f'{_u.get("email","")}{_restante}</span>'
             f'</div>',
             unsafe_allow_html=True,
         )
         col_x, col_y, col_z = st.columns(3)
         with col_x:
-            if st.button("🔚 Salir", use_container_width=True, key="logout"):
-                st.session_state.user_alias = None
-                st.session_state.historial_chat = []
+            if st.button("🔚 Salir", use_container_width=True, key="logout",
+                         help="Cierra la sesión y abre la encuesta de salida"):
+                disparar_logout_con_encuesta(reason="manual")
                 st.rerun()
         with col_y:
             if st.button("🗑 Chat", use_container_width=True, key="clear_chat_sidebar",
@@ -901,6 +892,11 @@ with tab_chat:
             and st.session_state.historial_chat[-1].get("rol") == "user"
             else st.session_state.historial_chat
         ) if usar_memoria else []
+
+        # Incrementar contador de consultas de esta sesión
+        st.session_state.queries_this_session = (
+            st.session_state.get("queries_this_session", 0) + 1
+        )
 
         # Procesamiento — streaming o bloqueante según toggle
         if usar_streaming:
