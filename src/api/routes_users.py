@@ -44,6 +44,16 @@ class DeleteMePayload(BaseModel):
     pin: str = Field(..., min_length=4, max_length=8)
 
 
+class RecoverPayload(BaseModel):
+    email: str
+    recovery_code: str = Field(..., min_length=8, max_length=12)
+    new_pin: str = Field(..., min_length=4, max_length=8)
+
+
+class AdminResetPayload(BaseModel):
+    email: str
+
+
 class SurveyPayload(BaseModel):
     user_id: str | None = None
     email: str | None = None
@@ -76,7 +86,7 @@ async def register(
         # Honeypot rellenado → bot. Responder como éxito sin hacer nada.
         return {"ok": True, "user": None}
 
-    user_id, error = await users_store.registrar_usuario(
+    user_id, error, recovery_code = await users_store.registrar_usuario(
         pool,
         email=payload.email,
         name=payload.name,
@@ -97,9 +107,9 @@ async def register(
     if error or not user_id:
         raise HTTPException(500, "No se pudo registrar el usuario.")
 
-    # Auto-login inmediato
+    # Auto-login inmediato. El recovery_code viaja UNA sola vez.
     perfil, _ = await users_store.login_usuario(pool, payload.email, payload.pin)
-    return {"ok": True, "user": perfil}
+    return {"ok": True, "user": perfil, "recovery_code": recovery_code}
 
 
 @router.post("/login", dependencies=[Depends(limitar_auth)])
@@ -149,6 +159,42 @@ async def enviar_encuesta(
     if not sid:
         raise HTTPException(500, "No se pudo guardar la encuesta.")
     return {"ok": True, "id": sid}
+
+
+@router.post("/recover", dependencies=[Depends(limitar_auth)])
+async def recuperar_pin(
+    payload: RecoverPayload,
+    pool: AsyncConnectionPool = Depends(get_pool),
+) -> dict:
+    """Resetea el PIN con el código de recuperación (un solo uso).
+
+    Al usarse, el código se rota: la respuesta incluye el nuevo
+    recovery_code que reemplaza al anterior.
+    """
+    ok, error, nuevo_codigo = await users_store.recuperar_pin(
+        pool, payload.email, payload.recovery_code, payload.new_pin
+    )
+    if not ok:
+        raise HTTPException(401, "Email o código de recuperación incorrectos.")
+    return {"ok": True, "recovery_code": nuevo_codigo}
+
+
+@router.post("/admin/reset-pin", dependencies=[Depends(verificar_admin)])
+async def admin_reset_pin(
+    payload: AdminResetPayload,
+    pool: AsyncConnectionPool = Depends(get_pool),
+) -> dict:
+    """Reset de PIN por administración: borra PIN y recovery code.
+
+    El próximo login de ese email define un PIN nuevo (bootstrap) y
+    recibe un recovery code nuevo.
+    """
+    ok, error = await users_store.admin_reset_pin(pool, payload.email)
+    if error == "no_encontrado":
+        raise HTTPException(404, "Email no registrado.")
+    if not ok:
+        raise HTTPException(400, "No se pudo resetear el PIN.")
+    return {"ok": True, "detail": "El próximo login de ese email definirá un PIN nuevo."}
 
 
 @router.post("/me/delete", dependencies=[Depends(limitar_auth)])

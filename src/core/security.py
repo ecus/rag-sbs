@@ -154,3 +154,25 @@ def pin_valido(pin: str) -> bool:
     """PIN de 4 a 8 dígitos."""
     p = (pin or "").strip()
     return p.isdigit() and 4 <= len(p) <= 8
+
+
+# =============================================================================
+# Código de recuperación de PIN — un solo uso, se muestra una única vez
+# =============================================================================
+
+# Alfabeto sin caracteres ambiguos (sin 0/O, 1/I/L)
+_ALFABETO_RECOVERY = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"
+
+
+def generar_recovery_code() -> str:
+    """Código legible tipo XXXX-XXXX (ej. 7K3M-9XQ2)."""
+    chars = [secrets.choice(_ALFABETO_RECOVERY) for _ in range(8)]
+    return f"{''.join(chars[:4])}-{''.join(chars[4:])}"
+
+
+def normalizar_recovery_code(codigo: str) -> str:
+    """Tolera minúsculas, espacios y guion faltante al ingresarlo."""
+    limpio = (codigo or "").strip().upper().replace(" ", "").replace("-", "")
+    if len(limpio) == 8:
+        return f"{limpio[:4]}-{limpio[4:]}"
+    return (codigo or "").strip().upper()

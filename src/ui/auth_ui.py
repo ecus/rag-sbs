@@ -30,6 +30,7 @@ def _init_state() -> None:
         "show_survey": False,
         "survey_closed_reason": "manual",   # "manual" | "timeout" | "browser"
         "survey_submitted": False,
+        "recovery_code_pendiente": None,    # código a mostrar UNA vez
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -92,9 +93,40 @@ def _email_valido(email: str) -> bool:
     return bool(EMAIL_RE.match((email or "").strip()))
 
 
+def _render_codigo_recuperacion() -> None:
+    """Muestra el recovery code UNA vez y exige confirmación para seguir."""
+    codigo = st.session_state.get("recovery_code_pendiente")
+    if not codigo:
+        return
+    st.markdown(
+        '<div style="background:linear-gradient(135deg,#fefce8,#fef9c3);'
+        'border:2px solid #eab308;border-radius:12px;padding:20px;margin:12px 0;">'
+        '<div style="font-size:20px;font-weight:700;color:#713f12;'
+        'margin-bottom:8px;">🔑 Guarde su código de recuperación</div>'
+        '<div style="color:#854d0e;font-size:13px;line-height:1.6;">'
+        'Si olvida su PIN, este código es la <b>única</b> forma de recuperar '
+        'el acceso. Anótelo en un lugar seguro — <b>no volverá a mostrarse</b>.'
+        '</div>'
+        f'<div style="font-family:monospace;font-size:28px;font-weight:700;'
+        f'letter-spacing:3px;color:#1e3a8a;background:#fff;border-radius:8px;'
+        f'padding:14px;text-align:center;margin-top:12px;">{codigo}</div>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+    if st.button("✅ Lo anoté, continuar", type="primary",
+                 use_container_width=True, key="ack_recovery"):
+        st.session_state.recovery_code_pendiente = None
+        st.rerun()
+    st.stop()
+
+
 def render_auth(api_base: str) -> None:
     """Renderiza el formulario de login o registro. Llama st.stop() si no auth."""
     _init_state()
+
+    # Si hay un recovery code pendiente de mostrar, bloquea todo hasta
+    # que el usuario confirme que lo guardó (aplica logueado o no).
+    _render_codigo_recuperacion()
 
     if esta_logueado():
         return
@@ -154,6 +186,10 @@ def render_auth(api_base: str) -> None:
                             st.session_state.historial_chat = []
                             # Memoria viene en el login (autenticada por PIN)
                             st.session_state.memoria_disponible = data.get("memory") or []
+                            # Bootstrap (definió PIN ahora): mostrar recovery code
+                            rc = data["user"].pop("recovery_code", None)
+                            if rc:
+                                st.session_state.recovery_code_pendiente = rc
                             st.toast(f"Bienvenido/a {data['user']['name']}", icon="👋")
                             st.rerun()
                         elif r.status_code == 401:
@@ -162,6 +198,72 @@ def render_auth(api_base: str) -> None:
                             st.warning("Demasiados intentos. Espere un minuto y reintente.")
                         else:
                             st.error(f"Error: {r.text}")
+                    except Exception as e:  # noqa: BLE001
+                        st.error(f"No se pudo conectar al servidor: {e}")
+
+        with st.expander("🆘 ¿Olvidaste tu PIN?"):
+            st.caption(
+                "Use el **código de recuperación** que se le mostró al crear "
+                "la cuenta (formato `XXXX-XXXX`). Al usarlo se genera un "
+                "código nuevo. Si tampoco tiene el código, contacte al "
+                "administrador para resetear su acceso."
+            )
+            with st.form("form_recover"):
+                rec_email = st.text_input("Email", key="rec_email")
+                rec_code = st.text_input(
+                    "Código de recuperación",
+                    placeholder="XXXX-XXXX",
+                    max_chars=12,
+                    key="rec_code",
+                )
+                col_rp1, col_rp2 = st.columns(2)
+                with col_rp1:
+                    rec_pin1 = st.text_input(
+                        "Nuevo PIN (4-8 dígitos)", type="password",
+                        max_chars=8, key="rec_pin1",
+                    )
+                with col_rp2:
+                    rec_pin2 = st.text_input(
+                        "Repetir nuevo PIN", type="password",
+                        max_chars=8, key="rec_pin2",
+                    )
+                rec_ok = st.form_submit_button(
+                    "Restablecer PIN", type="primary", use_container_width=True
+                )
+            if rec_ok:
+                if not _email_valido(rec_email):
+                    st.error("Ingrese un email válido.")
+                elif not (rec_pin1 or "").strip().isdigit() or not (4 <= len(rec_pin1.strip()) <= 8):
+                    st.error("El nuevo PIN debe tener entre 4 y 8 dígitos.")
+                elif rec_pin1.strip() != (rec_pin2 or "").strip():
+                    st.error("Los PIN no coinciden.")
+                elif not (rec_code or "").strip():
+                    st.error("Ingrese el código de recuperación.")
+                else:
+                    try:
+                        r = httpx.post(
+                            f"{api_base}/v1/users/recover",
+                            json={
+                                "email": rec_email.strip(),
+                                "recovery_code": rec_code.strip(),
+                                "new_pin": rec_pin1.strip(),
+                            },
+                            timeout=8,
+                        )
+                        if r.status_code == 200:
+                            st.success(
+                                "PIN restablecido ✓ — inicie sesión con su nuevo PIN."
+                            )
+                            nuevo_rc = r.json().get("recovery_code")
+                            if nuevo_rc:
+                                st.session_state.recovery_code_pendiente = nuevo_rc
+                                st.rerun()
+                        elif r.status_code == 401:
+                            st.error("Email o código de recuperación incorrectos.")
+                        elif r.status_code == 429:
+                            st.warning("Demasiados intentos. Espere un minuto.")
+                        else:
+                            st.error("No se pudo restablecer el PIN. Reintente.")
                     except Exception as e:  # noqa: BLE001
                         st.error(f"No se pudo conectar al servidor: {e}")
 
@@ -245,6 +347,9 @@ def render_auth(api_base: str) -> None:
                             st.session_state.queries_this_session = 0
                             st.session_state.historial_chat = []
                             st.session_state.memoria_disponible = []
+                            # Mostrar el recovery code una única vez
+                            if data.get("recovery_code"):
+                                st.session_state.recovery_code_pendiente = data["recovery_code"]
                             st.toast("Cuenta creada ✓", icon="✅")
                             st.rerun()
                         elif r.status_code == 409:

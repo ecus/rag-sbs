@@ -1379,6 +1379,39 @@ with tab_stats:
 
 with tab_runs:
     # ----------------------------------------------------------------------
+    # Gestión de usuarios — reset de PIN
+    # ----------------------------------------------------------------------
+    with st.expander("🔑 Resetear PIN de un usuario"):
+        st.caption(
+            "Borra el PIN y el código de recuperación del email indicado. "
+            "El próximo login de ese usuario definirá un PIN nuevo y "
+            "recibirá un código de recuperación nuevo."
+        )
+        with st.form("form_admin_reset_pin"):
+            reset_email = st.text_input("Email del usuario", key="admin_reset_email")
+            reset_go = st.form_submit_button("Resetear PIN", type="primary")
+        if reset_go and reset_email.strip():
+            try:
+                import httpx as _httpx
+                _r = _httpx.post(
+                    f"{api.base_url}/v1/users/admin/reset-pin",
+                    json={"email": reset_email.strip()},
+                    headers={"X-Admin-Key": st.session_state.get("admin_key", "")},
+                    timeout=8,
+                )
+                if _r.status_code == 200:
+                    st.success(
+                        f"PIN de {reset_email.strip()} reseteado. Su próximo "
+                        "login define el PIN nuevo."
+                    )
+                elif _r.status_code == 404:
+                    st.warning("Ese email no está registrado.")
+                else:
+                    st.error(f"Error: {_r.text}")
+            except Exception as _e:  # noqa: BLE001
+                st.error(f"No se pudo conectar: {_e}")
+
+    # ----------------------------------------------------------------------
     # Sección "Analytics de usuarios" — consultas registradas
     # ----------------------------------------------------------------------
     st.markdown("### 👥 Analytics de usuarios")

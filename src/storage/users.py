@@ -39,38 +39,52 @@ async def registrar_usuario(
     pin: str,
     organization: str | None = None,
     role: str | None = None,
-) -> tuple[str | None, str | None]:
-    """Crea un usuario nuevo con PIN. Retorna (user_id, error)."""
-    from src.core.security import hashear_pin, pin_valido
+) -> tuple[str | None, str | None, str | None]:
+    """Crea un usuario nuevo con PIN. Retorna (user_id, error, recovery_code).
+
+    El recovery_code se retorna en texto plano UNA sola vez (se guarda
+    hasheado); el caller debe mostrárselo al usuario para que lo guarde.
+    """
+    from src.core.security import (
+        generar_recovery_code,
+        hashear_pin,
+        pin_valido,
+    )
 
     email = (email or "").strip()
     name = (name or "").strip()
 
     if not email_valido(email):
-        return None, "email_invalido"
+        return None, "email_invalido", None
     if not name:
-        return None, "nombre_requerido"
+        return None, "nombre_requerido", None
     if not pin_valido(pin):
-        return None, "pin_invalido"
+        return None, "pin_invalido", None
 
+    recovery_code = generar_recovery_code()
     try:
         async with pool.connection() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
                     """
-                    INSERT INTO users (email, name, organization, role, pin_hash)
-                    VALUES (%s, %s, %s, %s, %s)
+                    INSERT INTO users
+                      (email, name, organization, role, pin_hash, recovery_code_hash)
+                    VALUES (%s, %s, %s, %s, %s, %s)
                     RETURNING id
                     """,
-                    (email, name, organization, role, hashear_pin(pin.strip())),
+                    (
+                        email, name, organization, role,
+                        hashear_pin(pin.strip()),
+                        hashear_pin(recovery_code),
+                    ),
                 )
                 row = await cur.fetchone()
-                return (str(row[0]) if row else None), None
+                return (str(row[0]) if row else None), None, recovery_code
     except Exception as e:  # noqa: BLE001
         if "duplicate" in str(e).lower() or "unique" in str(e).lower():
-            return None, "email_duplicado"
+            return None, "email_duplicado", None
         logger.exception("registrar_usuario falló")
-        return None, "error_interno"
+        return None, "error_interno", None
 
 
 async def login_usuario(
@@ -79,13 +93,21 @@ async def login_usuario(
     """Login con email + PIN. Retorna (perfil, error).
 
     Bootstrap: si el usuario existe pero no tiene PIN (legacy de la
-    migración 006), el primer login fija el PIN provisto.
+    migración 006, o tras un reset de admin), el primer login fija el PIN
+    provisto y genera un recovery_code nuevo que se incluye en el perfil
+    bajo la clave "recovery_code" (única vez que viaja en texto plano).
     """
-    from src.core.security import hashear_pin, pin_valido, verificar_pin
+    from src.core.security import (
+        generar_recovery_code,
+        hashear_pin,
+        pin_valido,
+        verificar_pin,
+    )
 
     if not email_valido(email) or not pin_valido(pin):
         return None, "credenciales_invalidas"
 
+    recovery_nuevo: str | None = None
     async with pool.connection() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
@@ -102,10 +124,11 @@ async def login_usuario(
             uid, pin_hash = str(row[0]), row[1]
 
             if pin_hash is None:
-                # Usuario legacy: el primer login define su PIN
+                # Usuario legacy o post-reset: este login define su PIN
+                recovery_nuevo = generar_recovery_code()
                 await cur.execute(
-                    "UPDATE users SET pin_hash = %s WHERE id = %s",
-                    (hashear_pin(pin.strip()), uid),
+                    "UPDATE users SET pin_hash = %s, recovery_code_hash = %s WHERE id = %s",
+                    (hashear_pin(pin.strip()), hashear_pin(recovery_nuevo), uid),
                 )
             elif not verificar_pin(pin.strip(), pin_hash):
                 return None, "credenciales_invalidas"
@@ -124,14 +147,90 @@ async def login_usuario(
             row = await cur.fetchone()
             if not row:
                 return None, "credenciales_invalidas"
-            return {
+            perfil = {
                 "id": str(row[0]),
                 "email": row[1],
                 "name": row[2],
                 "organization": row[3],
                 "role": row[4],
                 "n_queries_total": int(row[5] or 0),
-            }, None
+            }
+            if recovery_nuevo:
+                perfil["recovery_code"] = recovery_nuevo
+            return perfil, None
+
+
+async def recuperar_pin(
+    pool: AsyncConnectionPool, email: str, recovery_code: str, nuevo_pin: str
+) -> tuple[bool, str | None, str | None]:
+    """Resetea el PIN usando el código de recuperación.
+
+    El código es de UN solo uso: al usarse se rota y el nuevo se retorna
+    en texto plano para que el usuario lo guarde.
+    Retorna (ok, error, nuevo_recovery_code).
+    """
+    from src.core.security import (
+        generar_recovery_code,
+        hashear_pin,
+        normalizar_recovery_code,
+        pin_valido,
+        verificar_pin,
+    )
+
+    if not email_valido(email) or not pin_valido(nuevo_pin):
+        return False, "credenciales_invalidas", None
+
+    codigo = normalizar_recovery_code(recovery_code)
+    async with pool.connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "SELECT id, recovery_code_hash FROM users WHERE LOWER(email) = LOWER(%s)",
+                (email,),
+            )
+            row = await cur.fetchone()
+            if not row or not row[1] or not verificar_pin(codigo, row[1]):
+                # Genérico: no revelar si el email existe o si el código expiró
+                return False, "credenciales_invalidas", None
+            uid = str(row[0])
+
+            nuevo_codigo = generar_recovery_code()
+            await cur.execute(
+                """
+                UPDATE users
+                SET pin_hash = %s, recovery_code_hash = %s
+                WHERE id = %s
+                """,
+                (hashear_pin(nuevo_pin.strip()), hashear_pin(nuevo_codigo), uid),
+            )
+            logger.info("PIN recuperado con código para user %s", uid)
+            return True, None, nuevo_codigo
+
+
+async def admin_reset_pin(
+    pool: AsyncConnectionPool, email: str
+) -> tuple[bool, str | None]:
+    """Reset de admin: borra el PIN (el próximo login lo define de nuevo).
+
+    Invalida también el recovery_code anterior. Retorna (ok, error).
+    """
+    if not email_valido(email):
+        return False, "email_invalido"
+    async with pool.connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                UPDATE users
+                SET pin_hash = NULL, recovery_code_hash = NULL
+                WHERE LOWER(email) = LOWER(%s)
+                RETURNING id
+                """,
+                (email,),
+            )
+            row = await cur.fetchone()
+            if not row:
+                return False, "no_encontrado"
+            logger.info("PIN reseteado por admin para user %s", row[0])
+            return True, None
 
 
 async def borrar_usuario(
