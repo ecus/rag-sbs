@@ -868,21 +868,42 @@ with tab_chat:
             pregunta = consulta_input
 
     # ===== Detector de acrónimos ambiguos (interceptor) =====
-    if pregunta and consulta_input:
+    # Paso 1: input nuevo con siglas ambiguas → marcar como pendiente.
+    # NO renderizamos el form acá: si lo atáramos a consulta_input, el rerun
+    # del click del form (donde chat_input devuelve None) no ejecutaría el
+    # bloque y el click se perdería — ese era el bug original.
+    if pregunta and consulta_input and not st.session_state.get("acronimo_resuelto"):
         try:
             from src.agents.acronyms import detectar as _detectar_acronimos
-            ambiguedades = _detectar_acronimos(pregunta)
+            _ambigs = _detectar_acronimos(pregunta)
+        except Exception:  # noqa: BLE001
+            _ambigs = []
+        if _ambigs:
+            st.session_state.pregunta_pendiente_acronimo = pregunta
+            pregunta = None
+            consulta_input = None
+
+    # Paso 2: mientras haya pendiente sin resolver, renderizar el form en
+    # CADA rerun (desde session_state) para que el submit siempre se capture.
+    if (
+        st.session_state.get("pregunta_pendiente_acronimo")
+        and not st.session_state.get("acronimo_resuelto")
+    ):
+        pregunta_acro = st.session_state.pregunta_pendiente_acronimo
+        try:
+            from src.agents.acronyms import detectar as _detectar_acronimos
+            ambiguedades = _detectar_acronimos(pregunta_acro)
         except Exception:  # noqa: BLE001
             ambiguedades = []
 
-        if ambiguedades and not st.session_state.get("acronimo_resuelto"):
-            # Guardamos la pregunta original para usar después de resolver
-            st.session_state.pregunta_pendiente_acronimo = pregunta
+        if not ambiguedades:
+            # Falsa alarma (no debería pasar): liberar y seguir normal
+            st.session_state.pregunta_pendiente_acronimo = None
+        else:
             st.warning(
                 f"⚠️ Detecté **{len(ambiguedades)} acrónimo(s) ambiguo(s)** en tu pregunta. "
                 f"¿A cuál te referís?"
             )
-            # Form con radios — más robusto que botones sueltos en for-loop
             with st.form("form_acronimos", clear_on_submit=False):
                 selecciones: dict[str, str] = {}
                 for amb in ambiguedades:
@@ -912,7 +933,7 @@ with tab_chat:
                 )
 
             if submitted:
-                pregunta_extendida = pregunta
+                pregunta_extendida = pregunta_acro
                 for sigla, significado in selecciones.items():
                     if significado:
                         pregunta_extendida = pregunta_extendida.replace(
@@ -922,9 +943,6 @@ with tab_chat:
                 st.session_state.acronimo_resuelto = True
                 st.rerun()
             st.stop()
-
-        # Reset flag para próxima consulta
-        st.session_state.acronimo_resuelto = False
 
     if pregunta:
         # Reset flag para próxima consulta (siempre que entremos a procesar)
