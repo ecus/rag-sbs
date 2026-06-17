@@ -74,7 +74,7 @@ class QueryResponse(BaseModel):
     trace_id: UUID
     answer: str
     sources: list[Source]
-    confidence: Literal["alta", "media", "baja"]
+    confidence: Literal["alta", "media", "baja", "parcial", "sin_evidencia"]
     cache_hit: bool = False
     tokens_used: dict[str, int] = Field(default_factory=lambda: {"input": 0, "output": 0})
     latency_ms: float
