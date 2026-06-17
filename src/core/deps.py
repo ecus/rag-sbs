@@ -61,20 +61,35 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # LLM provider (singleton)
     app.state.llm = get_llm_provider()
 
-    # Ingestion scheduler (APScheduler con cron por fuente)
+    # Ingestion scheduler (APScheduler con cron por fuente).
+    # Se puede apagar con SCHEDULER_ENABLED=false para no consumir cuota del
+    # LLM (embeddings de re-ingestas). Las consultas siguen funcionando; solo
+    # se detiene la ingesta automática y el discovery. La ingesta manual por
+    # /v1/ingest sigue disponible.
+    import os
+    import logging
+    _scheduler_on = os.environ.get("SCHEDULER_ENABLED", "true").lower() not in (
+        "false", "0", "no", "off"
+    )
     scheduler = IngestionScheduler(pool=pool, llm=app.state.llm)
     app.state.ingestion_scheduler = scheduler
-    try:
-        await scheduler.start()
-    except Exception as exc:  # noqa: BLE001
-        # No bloquear arranque si scheduler falla; queda /v1/ingest/scan manual
-        import logging
-        logging.getLogger(__name__).warning("Scheduler no inició: %s", exc)
+    if _scheduler_on:
+        try:
+            await scheduler.start()
+        except Exception as exc:  # noqa: BLE001
+            # No bloquear arranque si scheduler falla; queda /v1/ingest/scan manual
+            logging.getLogger(__name__).warning("Scheduler no inició: %s", exc)
+    else:
+        logging.getLogger(__name__).warning(
+            "SCHEDULER_ENABLED=false — ingesta automática DESACTIVADA "
+            "(no se consumirá cuota del LLM en background)."
+        )
 
     try:
         yield
     finally:
-        await scheduler.shutdown()
+        if _scheduler_on:
+            await scheduler.shutdown()
         await pool.close()
         if hasattr(app.state.llm, "close"):
             await app.state.llm.close()

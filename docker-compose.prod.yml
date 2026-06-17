@@ -61,6 +61,7 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       ADMIN_API_KEY: ${ADMIN_API_KEY}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+      SCHEDULER_ENABLED: ${SCHEDULER_ENABLED:-true}
     volumes:
       - rag-objects:/var/lib/rag-sbs/objects
     depends_on:
