@@ -103,6 +103,68 @@ class APIClient:
         r.raise_for_status()
         return r.json()
 
+    # ------ Conversaciones ----------------------------------------------------
+
+    def conv_listar(self, email: str, limit: int = 50) -> list[dict]:
+        try:
+            r = self._client.get(
+                f"{self.base_url}/v1/conversations",
+                params={"email": email, "limit": limit},
+                timeout=8,
+            )
+            r.raise_for_status()
+            return r.json()
+        except Exception:  # noqa: BLE001
+            return []
+
+    def conv_crear(self, email: str, user_id: str | None = None,
+                   title: str | None = None) -> dict | None:
+        try:
+            r = self._client.post(
+                f"{self.base_url}/v1/conversations",
+                json={"email": email, "user_id": user_id, "title": title},
+                timeout=8,
+            )
+            r.raise_for_status()
+            return r.json()
+        except Exception:  # noqa: BLE001
+            return None
+
+    def conv_mensajes(self, conversation_id: str, limit: int = 100) -> list[dict]:
+        try:
+            r = self._client.get(
+                f"{self.base_url}/v1/conversations/{conversation_id}/messages",
+                params={"limit": limit},
+                timeout=8,
+            )
+            r.raise_for_status()
+            return r.json()
+        except Exception:  # noqa: BLE001
+            return []
+
+    def conv_renombrar(self, conversation_id: str, email: str, title: str) -> bool:
+        try:
+            r = self._client.patch(
+                f"{self.base_url}/v1/conversations/{conversation_id}",
+                json={"email": email, "title": title},
+                timeout=8,
+            )
+            return r.status_code == 200
+        except Exception:  # noqa: BLE001
+            return False
+
+    def conv_borrar(self, conversation_id: str, email: str) -> bool:
+        try:
+            r = self._client.request(
+                "DELETE",
+                f"{self.base_url}/v1/conversations/{conversation_id}",
+                json={"email": email},
+                timeout=8,
+            )
+            return r.status_code == 200
+        except Exception:  # noqa: BLE001
+            return False
+
     def query_stream(
         self,
         q: str,
@@ -112,6 +174,7 @@ class APIClient:
         report_mode: bool = False,
         history: list[dict] | None = None,
         alias: str | None = None,
+        conversation_id: str | None = None,
     ):
         """Generator: yields (event_type, data) parseando SSE.
 
@@ -132,6 +195,7 @@ class APIClient:
                 },
                 "history": history or [],
                 "alias": alias,
+                "conversation_id": conversation_id,
             },
         ) as resp:
             resp.raise_for_status()

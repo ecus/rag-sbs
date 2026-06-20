@@ -110,32 +110,9 @@ if esta_logueado() and chequear_timeout():
     disparar_logout_con_encuesta(reason="timeout")
     st.rerun()
 
-# 4) Memoria persistente: viene en la respuesta del login (autenticada por PIN)
-memoria_dispo = st.session_state.get("memoria_disponible") or []
-n_turnos_mem = sum(1 for m in memoria_dispo if m.get("rol") == "user")
-if (
-    esta_logueado()
-    and memoria_dispo
-    and not st.session_state.get("memoria_decidida")
-):
-    st.info(
-        f"📚 Encontré **{n_turnos_mem} consulta(s) anteriores** para "
-        f"**{st.session_state.user['name']}**. ¿Cargarlas como memoria?"
-    )
-    col_m1, col_m2 = st.columns(2)
-    with col_m1:
-        if st.button(f"📚 Sí, cargar {n_turnos_mem} consulta(s)",
-                     use_container_width=True, type="primary"):
-            st.session_state.historial_chat = memoria_dispo
-            st.session_state.memoria_decidida = True
-            st.toast("Memoria cargada", icon="✅")
-            st.rerun()
-    with col_m2:
-        if st.button("🆕 No, empezar limpio",
-                     use_container_width=True):
-            st.session_state.memoria_decidida = True
-            st.rerun()
-    st.stop()
+# 4) La memoria persistente ahora se maneja por CONVERSACIONES (sidebar).
+#    El historial activo es el de la conversación abierta; no se pide cargar
+#    "memoria global" al entrar. Cada hilo es un contexto limpio.
 
 # 5) Marcar actividad en cada rerun (resetea timeout)
 if esta_logueado():
@@ -157,10 +134,19 @@ NOMBRE_PASO = {
 }
 
 
-def _historial_para_backend(historial_streamlit: list[dict], max_turnos: int = 3) -> list[dict]:
+# Ventana de turnos del hilo que se REINYECTA al LLM en cada consulta.
+# Es el control de costo: cuanto mayor, más tokens de entrada por consulta.
+# Solo afecta cuánto contexto se manda, NO cuánto se guarda (se guarda todo).
+MAX_TURNOS_CONTEXTO = 3
+
+
+def _historial_para_backend(
+    historial_streamlit: list[dict], max_turnos: int = MAX_TURNOS_CONTEXTO
+) -> list[dict]:
     """Convierte el historial de Streamlit a {role, content} para el API.
 
-    Solo toma los últimos N turnos completos (user+assistant) para no inflar.
+    Solo toma los últimos N turnos completos (user+assistant) para no inflar
+    el contexto (y por ende el costo del LLM).
     """
     if not historial_streamlit:
         return []
@@ -171,6 +157,77 @@ def _historial_para_backend(historial_streamlit: list[dict], max_turnos: int = 3
         if contenido.strip():
             salida.append({"role": rol, "content": contenido})
     return salida
+
+
+def _asegurar_conversacion(api: APIClient, user: dict) -> str | None:
+    """Devuelve el conversation_id activo; crea uno si no hay."""
+    cid = st.session_state.get("conversation_id")
+    if cid:
+        return cid
+    conv = api.conv_crear(email=user.get("email"), user_id=user.get("id"))
+    if conv:
+        st.session_state.conversation_id = conv["id"]
+        st.session_state.conversaciones = None  # invalidar cache de la lista
+        return conv["id"]
+    return None
+
+
+def _render_conversaciones(api: APIClient, user: dict) -> None:
+    """Sidebar estilo ChatGPT: nueva conversación + lista + renombrar/borrar."""
+    email = user.get("email")
+
+    if st.button("➕ Nueva conversación", use_container_width=True,
+                 type="primary", key="conv_nueva"):
+        conv = api.conv_crear(email=email, user_id=user.get("id"))
+        if conv:
+            st.session_state.conversation_id = conv["id"]
+            st.session_state.historial_chat = []
+            st.session_state.conversaciones = None
+            st.toast("Nueva conversación", icon="✨")
+            st.rerun()
+
+    # Cargar lista (cacheada en session_state, refrescable)
+    if st.session_state.get("conversaciones") is None:
+        st.session_state.conversaciones = api.conv_listar(email, limit=40)
+    convs = st.session_state.conversaciones or []
+
+    if not convs:
+        st.caption("Aún no tenés conversaciones guardadas.")
+        return
+
+    st.caption(f"💬 Tus conversaciones ({len(convs)})")
+    activa = st.session_state.get("conversation_id")
+    for c in convs:
+        es_activa = c["id"] == activa
+        etiqueta = ("🟢 " if es_activa else "") + (c["title"] or "Sin título")
+        if st.button(etiqueta, use_container_width=True,
+                     key=f"conv_{c['id']}",
+                     type="secondary",
+                     help=f"{c['n_mensajes']} mensaje(s)"):
+            # Cambiar de conversación: cargar sus mensajes
+            msgs = api.conv_mensajes(c["id"], limit=100)
+            st.session_state.conversation_id = c["id"]
+            st.session_state.historial_chat = msgs
+            st.session_state.memoria_decidida = True
+            st.rerun()
+
+    # Controles de la conversación activa
+    if activa:
+        with st.expander("✏️ Renombrar / 🗑 borrar conversación activa"):
+            nuevo = st.text_input("Nuevo título", key="conv_rename_input")
+            col_r1, col_r2 = st.columns(2)
+            if col_r1.button("Renombrar", use_container_width=True, key="conv_rename_go"):
+                if nuevo.strip() and api.conv_renombrar(activa, email, nuevo.strip()):
+                    st.session_state.conversaciones = None
+                    st.toast("Renombrada", icon="✏️")
+                    st.rerun()
+            if col_r2.button("🗑 Borrar", use_container_width=True, key="conv_delete_go"):
+                if api.conv_borrar(activa, email):
+                    st.session_state.conversation_id = None
+                    st.session_state.historial_chat = []
+                    st.session_state.conversaciones = None
+                    st.toast("Conversación borrada", icon="🗑")
+                    st.rerun()
 
 
 def _procesar_streaming(
@@ -205,6 +262,7 @@ def _procesar_streaming(
                 report_mode=modo_informe,
                 history=historial,
                 alias=st.session_state.get("user_alias"),
+                conversation_id=st.session_state.get("conversation_id"),
             ):
                 if evento == "status":
                     paso = data.get("step", "")
@@ -463,23 +521,13 @@ with st.sidebar:
             f'</div>',
             unsafe_allow_html=True,
         )
-        col_x, col_y, col_z = st.columns(3)
-        with col_x:
-            if st.button("🔚 Salir", use_container_width=True, key="logout",
-                         help="Cierra la sesión y abre la encuesta de salida"):
-                disparar_logout_con_encuesta(reason="manual")
-                st.rerun()
-        with col_y:
-            if st.button("🗑 Chat", use_container_width=True, key="clear_chat_sidebar",
-                         help="Limpiar conversación (mantiene sesión)"):
-                st.session_state.historial_chat = []
-                st.rerun()
-        with col_z:
-            if st.button("🆕 Tema", use_container_width=True, key="new_topic",
-                         help="Limpiar contexto: la próxima pregunta se trata como tema nuevo, sin sesgos de conversación anterior"):
-                st.session_state.historial_chat = []
-                st.toast("🆕 Contexto limpiado — próxima pregunta sin sesgo previo", icon="✨")
-                st.rerun()
+        if st.button("🔚 Salir", use_container_width=True, key="logout",
+                     help="Cierra la sesión y abre la encuesta de salida"):
+            disparar_logout_con_encuesta(reason="manual")
+            st.rerun()
+
+        # ----- Gestor de conversaciones (estilo ChatGPT) -----
+        _render_conversaciones(api, _u)
 
     if not st.session_state.modo_tecnico:
         # ----- MODO USUARIO: simple, amigable -----
@@ -992,6 +1040,12 @@ with tab_chat:
         st.session_state.queries_this_session = (
             st.session_state.get("queries_this_session", 0) + 1
         )
+
+        # Asegurar conversación activa (crea una si es la primera consulta).
+        # La lista se invalida para refrescar título/contador tras responder.
+        if esta_logueado():
+            _asegurar_conversacion(api, st.session_state.user)
+            st.session_state.conversaciones = None
 
         # Procesamiento — streaming o bloqueante según toggle
         if usar_streaming:

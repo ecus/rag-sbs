@@ -12,6 +12,7 @@ from src import __version__
 from src.api import (
     routes_analytics,
     routes_background,
+    routes_conversations,
     routes_graph,
     routes_health,
     routes_ingest,
@@ -60,6 +61,7 @@ def create_app() -> FastAPI:
     app.include_router(routes_query.router)
     app.include_router(routes_graph.router)
     app.include_router(routes_users.router)
+    app.include_router(routes_conversations.router)
 
     # Routes de administración — requieren header X-Admin-Key
     admin_dep = [Depends(verificar_admin)]

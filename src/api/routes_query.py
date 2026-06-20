@@ -582,7 +582,13 @@ async def query(
                     for f in fuentes[:8]
                 ],
                 client_ip=_ip_cliente(request),
+                conversation_id=payload.conversation_id,
             )
+            if payload.conversation_id:
+                from src.storage import conversations as _conv
+                await _conv.tocar_conversacion(
+                    pool, payload.conversation_id, titulo_si_vacio=payload.query
+                )
         except Exception:  # noqa: BLE001
             pass
 
@@ -888,7 +894,13 @@ async def query_stream(
                             for f in fragmentos[:8]
                         ],
                         client_ip=_ip_cliente(request),
+                        conversation_id=payload.conversation_id,
                     )
+                    if payload.conversation_id:
+                        from src.storage import conversations as _conv
+                        await _conv.tocar_conversacion(
+                            pool, payload.conversation_id, titulo_si_vacio=payload.query
+                        )
                 except Exception:  # noqa: BLE001
                     pass
 

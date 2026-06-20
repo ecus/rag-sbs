@@ -31,6 +31,8 @@ def _init_state() -> None:
         "survey_closed_reason": "manual",   # "manual" | "timeout" | "browser"
         "survey_submitted": False,
         "recovery_code_pendiente": None,    # código a mostrar UNA vez
+        "conversation_id": None,            # hilo activo
+        "conversaciones": None,             # cache de la lista (None = recargar)
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -576,6 +578,8 @@ def _logout_final() -> None:
         "plan_pendiente",
         "pregunta_pendiente_acronimo",
         "acronimo_resuelto",
+        "conversation_id",
+        "conversaciones",
     ]:
         if k in st.session_state:
             st.session_state[k] = (

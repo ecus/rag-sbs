@@ -49,8 +49,12 @@ class QueryRequest(BaseModel):
     )
     alias: str | None = Field(
         default=None,
-        max_length=60,
-        description="Alias del usuario para analytics y memoria persistente",
+        max_length=180,
+        description="Alias/email del usuario para analytics y memoria persistente",
+    )
+    conversation_id: str | None = Field(
+        default=None,
+        description="ID de la conversación (hilo) a la que pertenece la consulta",
     )
 
 
