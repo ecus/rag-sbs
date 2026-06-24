@@ -26,9 +26,11 @@ from src.llm.base import LLMProvider
 from src.tools import (
     CalculoResult,
     ClasificacionInput,
+    CronogramaInput,
     ProvisionInput,
     calcular_provision,
     clasificar_deudor,
+    generar_cronograma,
 )
 
 logger = logging.getLogger(__name__)
@@ -41,6 +43,8 @@ Te paso una consulta del usuario. Determina si requiere CÁLCULO determinista
 (no solo explicación) sobre:
   A) Clasificación de un deudor según días de atraso
   B) Cálculo de provisión de un crédito
+  C) Cronograma de amortización de un crédito (cuotas, intereses, plazo),
+     incluyendo reprogramaciones (postergar una cuota N días)
 
 Si NO hay cálculo pedido (solo explicación general), retorna `{"calls": []}`.
 
@@ -72,11 +76,21 @@ VALORES ACEPTADOS:
                 microempresa, consumo_revolvente, consumo_no_revolvente, hipotecario
   clasificacion: Normal, CPP, Deficiente, Dudoso, Pérdida
   tipo_garantia: ninguna, preferida, preferida_muy_rapida, preferida_autoliquidable
+  tipo_tasa (cronograma): TEA (anual, default), TEM (mensual), TED (diaria)
+  metodo (cronograma): frances (cuota fija, default), aleman (amort. constante)
+
+HERRAMIENTA cronograma_amortizacion — args:
+  monto (capital), tasa (ej 0.38 o 38), tipo_tasa, plazo_meses, metodo,
+  reprogramacion: {"cuota_numero": N, "dias_extra": D}  (opcional)
 
 REGLAS:
 - Solo llama clasificar_deudor si el usuario menciona días de atraso explícitos.
 - Solo llama calcular_provision si el usuario menciona un saldo Y una categoría
   (o si la clasificación se puede inferir del paso anterior).
+- Llama cronograma_amortizacion cuando el usuario pida un cronograma, tabla de
+  cuotas, plan de pagos o amortización CON monto, tasa y plazo. Si pide además
+  simular una reprogramación/postergación, agrega el bloque reprogramacion.
+  Si pide el cronograma normal Y el reprogramado, emite DOS llamadas.
 - Si faltan datos numéricos para hacer el cálculo, retorna {"calls": []} y la
   capa RAG explicará el concepto sin números.
 - Output SOLO JSON, sin texto adicional, sin markdown.
@@ -100,6 +114,15 @@ Q: "Explícame el sistema de provisiones procíclicas"
 
 Q: "¿Qué establece la SBS sobre titularización?"
 → {"calls":[]}
+
+Q: "dame un cronograma de un crédito de consumo de 1000 soles con 38% de tasa a 12 meses"
+→ {"calls":[{"tool":"cronograma_amortizacion","args":{"monto":1000,"tasa":0.38,"tipo_tasa":"TEA","plazo_meses":12,"metodo":"frances"}}]}
+
+Q: "cronograma de S/1000 al 38% a 12 meses, y otro simulando que en la 3ra cuota se reprograma 15 días"
+→ {"calls":[
+    {"tool":"cronograma_amortizacion","args":{"monto":1000,"tasa":0.38,"tipo_tasa":"TEA","plazo_meses":12,"metodo":"frances"}},
+    {"tool":"cronograma_amortizacion","args":{"monto":1000,"tasa":0.38,"tipo_tasa":"TEA","plazo_meses":12,"metodo":"frances","reprogramacion":{"cuota_numero":3,"dias_extra":15}}}
+  ]}
 
 CASOS ESPECIALES — "ejemplo" / "ejemplo sencillo" / "muéstrame un ejemplo":
 Si el usuario pide explícitamente un "ejemplo" o "ejemplo sencillo" SIN dar
@@ -170,6 +193,15 @@ def _ejecutar_llamada(call: dict) -> CalculoResult:
         if tool == "calcular_provision":
             inp = ProvisionInput(**args)
             out = calcular_provision(inp)
+            return CalculoResult(
+                tool=tool,
+                inputs=inp.model_dump(),
+                output=out.model_dump(),
+                fuente_normativa=out.fuente_normativa,
+            )
+        if tool == "cronograma_amortizacion":
+            inp = CronogramaInput(**args)
+            out = generar_cronograma(inp)
             return CalculoResult(
                 tool=tool,
                 inputs=inp.model_dump(),
@@ -278,6 +310,35 @@ def detectar_dependencias(calculos: list[CalculoResult]) -> dict[int, list[str]]
     return dependencias
 
 
+def _formatear_cronograma(output: dict) -> str:
+    """Renderiza el cronograma como tabla de texto para el prompt del LLM."""
+    filas = output.get("cronograma", []) or []
+    lineas = [
+        f"  TEM={output.get('tasa_mensual_efectiva')}%  "
+        f"TED={output.get('tasa_diaria_efectiva')}%  "
+        f"Cuota fija=S/{output.get('cuota_fija')}",
+        "  Cuota | Días | Saldo ini | Interés | Amortiz. | Cuota | Saldo fin",
+    ]
+    for f in filas:
+        lineas.append(
+            f"  {f['cuota']:>5} | {f['dias']:>4} | {f['saldo_inicial']:>9.2f} | "
+            f"{f['interes']:>7.2f} | {f['amortizacion']:>8.2f} | "
+            f"{f['cuota_total']:>7.2f} | {f['saldo_final']:>9.2f}"
+        )
+    lineas.append(
+        f"  Total intereses=S/{output.get('total_intereses')}  "
+        f"Total pagado=S/{output.get('total_pagado')}"
+    )
+    if output.get("interes_adicional_reprogramacion"):
+        lineas.append(
+            f"  Interés adicional por reprogramación: "
+            f"S/{output['interes_adicional_reprogramacion']}"
+        )
+    if output.get("nota_reprogramacion"):
+        lineas.append(f"  Nota: {output['nota_reprogramacion']}")
+    return "\n".join(lineas)
+
+
 def formatear_calculos_para_prompt(calculos: list[CalculoResult]) -> str:
     """Renderiza los cálculos como bloque para incluir en el user prompt.
 
@@ -307,7 +368,10 @@ def formatear_calculos_para_prompt(calculos: list[CalculoResult]) -> str:
         lineas.append(f"\n[Cálculo {i}] {c.tool}")
         lineas.append(f"  Fuente: {c.fuente_normativa}")
         lineas.append(f"  Inputs: {c.inputs}")
-        lineas.append(f"  Output: {c.output}")
+        if c.tool == "cronograma_amortizacion":
+            lineas.append(_formatear_cronograma(c.output))
+        else:
+            lineas.append(f"  Output: {c.output}")
         if i in deps:
             for texto_dep in deps[i]:
                 lineas.append(f"  ⛓ DEPENDENCIA: {texto_dep}")

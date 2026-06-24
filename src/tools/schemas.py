@@ -57,10 +57,62 @@ class ProvisionOutput(BaseModel):
     desglose: dict = Field(default_factory=dict)
 
 
+# ---------------------------------------------------------------------------
+# Cronograma de amortización
+# ---------------------------------------------------------------------------
+
+TipoTasa = Literal["TEA", "TEM", "TED"]
+MetodoAmortizacion = Literal["frances", "aleman"]
+
+
+class ReprogramacionInput(BaseModel):
+    """Postergación de una cuota por N días."""
+
+    cuota_numero: int = Field(..., ge=1, description="Nº de cuota que se reprograma")
+    dias_extra: int = Field(..., ge=1, le=365, description="Días de postergación")
+
+
+class CronogramaInput(BaseModel):
+    """Input para generar_cronograma."""
+
+    monto: float = Field(..., gt=0, description="Capital del crédito")
+    tasa: float = Field(..., gt=0, description="Valor de la tasa (0.38 o 38)")
+    tipo_tasa: TipoTasa = "TEA"
+    plazo_meses: int = Field(..., ge=1, le=600)
+    metodo: MetodoAmortizacion = "frances"
+    reprogramacion: ReprogramacionInput | None = None
+
+
+class CuotaCronograma(BaseModel):
+    """Una fila del cronograma."""
+
+    cuota: int
+    dias: int
+    saldo_inicial: float
+    interes: float
+    amortizacion: float
+    cuota_total: float
+    saldo_final: float
+
+
+class CronogramaOutput(BaseModel):
+    """Output de generar_cronograma."""
+
+    tasa_mensual_efectiva: float       # %
+    tasa_diaria_efectiva: float        # %
+    cuota_fija: float
+    cronograma: list[CuotaCronograma]
+    total_intereses: float
+    total_pagado: float
+    interes_adicional_reprogramacion: float = 0.0
+    fuente_normativa: str
+    nota_reprogramacion: str | None = None
+
+
 class CalculoResult(BaseModel):
     """Resultado genérico devuelto por el calculator agent."""
 
-    tool: str                  # 'clasificar_deudor' | 'calcular_provision'
+    tool: str                  # 'clasificar_deudor' | 'calcular_provision' | 'cronograma_amortizacion'
     inputs: dict
     output: dict
     fuente_normativa: str

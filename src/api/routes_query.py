@@ -342,6 +342,24 @@ def _confianza_final(fragmentos: list, respuesta_texto: str) -> str:
        "¿podría especificar" in t:
         return "parcial"
 
+    # PARCIAL: el LLM dio contexto pero admitió NO poder responder lo pedido
+    # (típico cuando piden un cálculo/cronograma y el corpus solo tiene normativa).
+    # Si el calculator agent sí ejecutó, la respuesta trae los números y no usa
+    # estas frases, así que no entra acá.
+    if any(k in t for k in (
+        "no contiene las fórmulas",
+        "no contiene los datos necesarios",
+        "no contiene la información necesaria",
+        "no se pueden generar",
+        "no es posible generar",
+        "no puedo generar",
+        "no es posible calcular",
+        "no puedo calcular",
+        "no se puede calcular con la información",
+        "no contiene información para realizar el cálculo",
+    )):
+        return "parcial"
+
     return base
 
 
