@@ -103,6 +103,44 @@ class APIClient:
         r.raise_for_status()
         return r.json()
 
+    # ------ Administración de acceso -----------------------------------------
+
+    def usuarios_pendientes(self) -> list[dict]:
+        try:
+            r = self._client.get(f"{self.base_url}/v1/users/pending", timeout=8)
+            r.raise_for_status()
+            return r.json()
+        except Exception:  # noqa: BLE001
+            return []
+
+    def aprobar_usuario(self, email: str) -> bool:
+        try:
+            r = self._client.post(
+                f"{self.base_url}/v1/users/approve", json={"email": email}, timeout=8
+            )
+            return r.status_code == 200
+        except Exception:  # noqa: BLE001
+            return False
+
+    def rechazar_usuario(self, email: str) -> bool:
+        try:
+            r = self._client.post(
+                f"{self.base_url}/v1/users/reject", json={"email": email}, timeout=8
+            )
+            return r.status_code == 200
+        except Exception:  # noqa: BLE001
+            return False
+
+    def set_limite_diario(self, email: str, limite: int) -> bool:
+        try:
+            r = self._client.post(
+                f"{self.base_url}/v1/users/set-limit",
+                json={"email": email, "limite": limite}, timeout=8,
+            )
+            return r.status_code == 200
+        except Exception:  # noqa: BLE001
+            return False
+
     # ------ Conversaciones ----------------------------------------------------
 
     def conv_listar(self, email: str, limit: int = 50) -> list[dict]:
@@ -198,6 +236,16 @@ class APIClient:
                 "conversation_id": conversation_id,
             },
         ) as resp:
+            # Acceso denegado / límite diario: el servidor responde 403/429
+            # con {"detail": "..."} ANTES de abrir el stream.
+            if resp.status_code in (401, 403, 429):
+                resp.read()
+                try:
+                    detalle = resp.json().get("detail", "Acceso denegado.")
+                except Exception:  # noqa: BLE001
+                    detalle = "Acceso denegado."
+                yield "error", {"message": detalle, "type": f"http_{resp.status_code}"}
+                return
             resp.raise_for_status()
             event_actual = "message"
             for linea in resp.iter_lines():

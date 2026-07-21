@@ -363,6 +363,34 @@ def _confianza_final(fragmentos: list, respuesta_texto: str) -> str:
     return base
 
 
+async def _verificar_acceso(pool, alias: str | None) -> None:
+    """Bloquea la consulta si el usuario no está aprobado o superó su límite diario.
+
+    Si el alias no corresponde a un usuario registrado (legacy/test), no bloquea.
+    """
+    if not alias:
+        return
+    try:
+        from src.storage import users as _users
+        estado = await _users.estado_acceso(pool, alias.strip())
+    except Exception:  # noqa: BLE001
+        return  # falla suave: no bloquear por error de infraestructura
+    if not estado:
+        return  # alias no registrado → legacy/test, se permite
+    if estado["status"] != "approved":
+        raise HTTPException(
+            403,
+            "Tu acceso está pendiente de aprobación por el administrador.",
+        )
+    limite = estado["daily_query_limit"]
+    if limite > 0 and estado["usadas_hoy"] >= limite:
+        raise HTTPException(
+            429,
+            f"Alcanzaste tu límite de {limite} consultas por día. "
+            f"Volvé a intentar mañana.",
+        )
+
+
 @router.post("/v1/query", response_model=QueryResponse)
 async def query(
     payload: QueryRequest,
@@ -372,6 +400,7 @@ async def query(
     _rl: None = Depends(limitar_query),
 ) -> QueryResponse:
     """Consulta RAG vanilla — Sprint 1."""
+    await _verificar_acceso(pool, payload.alias)
     inicio = time.perf_counter()
     trace_id = uuid4()
 
@@ -692,6 +721,9 @@ async def query_stream(
     El cliente puede ir pintando la respuesta token-por-token y al final
     aplicar el formateo de fuentes.
     """
+    # Gating de acceso ANTES de abrir el stream → devuelve 403/429 normal
+    await _verificar_acceso(pool, payload.alias)
+
     async def generador():
         import time
         from uuid import uuid4

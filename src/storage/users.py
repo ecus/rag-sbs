@@ -140,7 +140,8 @@ async def login_usuario(
                     last_activity_at = NOW(),
                     n_sessions = n_sessions + 1
                 WHERE id = %s
-                RETURNING id, email, name, organization, role, n_queries_total
+                RETURNING id, email, name, organization, role, n_queries_total,
+                          status, daily_query_limit
                 """,
                 (uid,),
             )
@@ -154,6 +155,8 @@ async def login_usuario(
                 "organization": row[3],
                 "role": row[4],
                 "n_queries_total": int(row[5] or 0),
+                "status": row[6],
+                "daily_query_limit": int(row[7] or 0),
             }
             if recovery_nuevo:
                 perfil["recovery_code"] = recovery_nuevo
@@ -313,6 +316,91 @@ async def incrementar_queries(pool: AsyncConnectionPool, email: str) -> None:
                 )
     except Exception:  # noqa: BLE001
         logger.exception("incrementar_queries falló email=%s", email)
+
+
+async def estado_acceso(pool: AsyncConnectionPool, email: str) -> dict | None:
+    """Devuelve {status, daily_query_limit, usadas_hoy} para gating de acceso."""
+    if not email_valido(email):
+        return None
+    async with pool.connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT u.status, u.daily_query_limit,
+                       (SELECT COUNT(*) FROM query_log q
+                        WHERE LOWER(q.alias) = LOWER(u.email)
+                          AND q.created_at >= date_trunc('day', NOW())) AS usadas_hoy
+                FROM users u
+                WHERE LOWER(u.email) = LOWER(%s)
+                """,
+                (email,),
+            )
+            row = await cur.fetchone()
+            if not row:
+                return None
+            return {
+                "status": row[0],
+                "daily_query_limit": int(row[1] or 0),
+                "usadas_hoy": int(row[2] or 0),
+            }
+
+
+async def listar_pendientes(pool: AsyncConnectionPool, limit: int = 100) -> list[dict]:
+    """Usuarios con status='pending' para que el admin apruebe."""
+    async with pool.connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT id, email, name, organization, role, created_at
+                FROM users WHERE status = 'pending'
+                ORDER BY created_at ASC LIMIT %s
+                """,
+                (limit,),
+            )
+            filas = await cur.fetchall()
+    return [
+        {
+            "id": str(r[0]), "email": r[1], "name": r[2],
+            "organization": r[3], "role": r[4],
+            "created_at": r[5].isoformat() if r[5] else None,
+        }
+        for r in filas
+    ]
+
+
+async def set_status_usuario(
+    pool: AsyncConnectionPool, email: str, status: str
+) -> bool:
+    """Aprueba o rechaza un usuario (status in 'approved'/'rejected'/'pending')."""
+    if status not in ("approved", "rejected", "pending"):
+        return False
+    async with pool.connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                UPDATE users
+                SET status = %s,
+                    approved_at = CASE WHEN %s = 'approved' THEN NOW() ELSE approved_at END
+                WHERE LOWER(email) = LOWER(%s)
+                """,
+                (status, status, email),
+            )
+            return cur.rowcount > 0
+
+
+async def set_limite_diario(
+    pool: AsyncConnectionPool, email: str, limite: int
+) -> bool:
+    """Ajusta el límite de consultas por día de un usuario."""
+    if limite < 0:
+        return False
+    async with pool.connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "UPDATE users SET daily_query_limit = %s WHERE LOWER(email) = LOWER(%s)",
+                (limite, email),
+            )
+            return cur.rowcount > 0
 
 
 async def guardar_encuesta(

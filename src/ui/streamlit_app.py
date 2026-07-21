@@ -105,6 +105,33 @@ render_survey(api.base_url)
 # 2) Si no hay usuario logueado, pedir login/registro y bloquear
 render_auth(api.base_url)
 
+# 2.5) Gate de aprobación: si el usuario no está aprobado, bloquear la app
+if esta_logueado() and (st.session_state.user or {}).get("status") != "approved":
+    _u = st.session_state.user
+    st.markdown(
+        '<div style="background:linear-gradient(135deg,#fef9c3,#fde68a);'
+        'border:1px solid #f59e0b;border-radius:12px;padding:24px;'
+        'margin:20px auto;max-width:640px;text-align:center;">'
+        '<div style="font-size:26px;margin-bottom:10px;">⏳ Solicitud de acceso enviada</div>'
+        f'<div style="color:#78350f;font-size:14px;line-height:1.6;">'
+        f'Hola <b>{_u.get("name","")}</b>, tu registro con <b>{_u.get("email","")}</b> '
+        f'quedó <b>pendiente de aprobación</b>.<br>'
+        f'Un administrador revisará tu solicitud y podrás ingresar en cuanto sea '
+        f'aprobada. Volvé a iniciar sesión más tarde.'
+        f'</div></div>',
+        unsafe_allow_html=True,
+    )
+    if st.button("🔄 Ya me aprobaron — reintentar", type="primary"):
+        # Re-login para refrescar el status
+        st.session_state.user = None
+        st.session_state.user_alias = None
+        st.rerun()
+    if st.button("🔚 Salir"):
+        st.session_state.user = None
+        st.session_state.user_alias = None
+        st.rerun()
+    st.stop()
+
 # 3) Si la sesión expiró por inactividad → disparar encuesta
 if esta_logueado() and chequear_timeout():
     disparar_logout_con_encuesta(reason="timeout")
@@ -248,6 +275,7 @@ def _procesar_streaming(
     rewrite_info: dict | None = None
     texto_acumulado: list[str] = []
     error: str | None = None
+    error_tipo: str = ""
 
     with st.chat_message("assistant"):
         # Estado de progreso colapsable
@@ -296,15 +324,30 @@ def _procesar_streaming(
                     metadata_final = data
                 elif evento == "error":
                     error = data.get("message", str(data))
+                    error_tipo = data.get("type", "") if isinstance(data, dict) else ""
                     break
                 elif evento == "done":
                     break
         except Exception as exc:  # noqa: BLE001
             error = str(exc)
+            error_tipo = ""
 
         if error:
-            status.update(label="❌ Error del LLM", state="error", expanded=True)
             err_lower = error.lower()
+            # Casos de control de acceso (no son errores del LLM)
+            if error_tipo == "http_403" or "pendiente de aprobación" in err_lower:
+                status.update(label="⏳ Acceso pendiente", state="error", expanded=True)
+                placeholder_texto.warning(
+                    "⏳ **Tu acceso está pendiente de aprobación.** "
+                    "Un administrador debe habilitarte antes de poder consultar."
+                )
+                return
+            if error_tipo == "http_429" and "por día" in err_lower:
+                status.update(label="🚦 Límite diario alcanzado", state="error", expanded=True)
+                placeholder_texto.warning(f"🚦 {error}")
+                return
+
+            status.update(label="❌ Error del LLM", state="error", expanded=True)
             is_503 = "503" in error or "unavailable" in err_lower or "high demand" in err_lower
             is_429 = "429" in error or "quota" in err_lower or "rate" in err_lower
             is_timeout = "timeout" in err_lower or "timed out" in err_lower
@@ -795,29 +838,57 @@ with tab_chat:
                 st.success("Consulta lista. Se activaron Grafo + Saltos 2 + Informe + Agente.")
                 st.rerun()
 
-    # Opciones del pipeline (6 toggles)
-    col_a, col_b, col_c, col_d, col_e, col_f, col_g = st.columns([2, 1, 1, 1, 1, 1, 1])
-    with col_b:
-        usar_grafo = st.toggle("Graph-aug", value=False, key="chat_graph",
-                                help="Usa el knowledge graph para enriquecer el contexto")
-    with col_c:
-        max_hops = st.selectbox("Saltos", [1, 2], index=0, key="chat_hops",
-                                disabled=not usar_grafo)
-    with col_d:
-        modo_informe = st.toggle("📋 Informe", value=False, key="chat_informe",
-                                  help="Respuesta estructurada en 10 dimensiones")
-    with col_e:
-        usar_planner = st.toggle("🤖 Agente", value=False, key="chat_agente",
-                                  help="Pide clarificaciones antes de buscar si la consulta "
-                                       "es ambigua.")
-    with col_f:
-        usar_streaming = st.toggle("⚡ Stream", value=True, key="chat_stream",
-                                    help="Token-por-token en vivo.")
-    with col_g:
-        usar_memoria = st.toggle("🧠 Memoria", value=True, key="chat_memoria",
-                                  help="Pasa los últimos turnos al backend para resolver "
-                                       "referencias anafóricas y mantener el hilo "
-                                       "de la conversación.")
+    # Opciones del pipeline. Para usuarios normales el chat es SIMPLE: se usan
+    # defaults inteligentes y los toggles quedan escondidos en un expander
+    # "Opciones avanzadas". En modo técnico se muestran directamente.
+    def _toggles_avanzados() -> None:
+        col_b, col_c, col_d, col_e, col_f, col_g = st.columns(6)
+        with col_b:
+            st.toggle("Graph-aug", value=st.session_state.get("chat_graph", False),
+                      key="chat_graph",
+                      help="Usa el knowledge graph para enriquecer el contexto")
+        with col_c:
+            st.selectbox("Saltos", [1, 2], index=0, key="chat_hops",
+                         disabled=not st.session_state.get("chat_graph"))
+        with col_d:
+            st.toggle("📋 Informe", value=st.session_state.get("chat_informe", False),
+                      key="chat_informe", help="Respuesta estructurada en 10 dimensiones")
+        with col_e:
+            st.toggle("🤖 Agente", value=st.session_state.get("chat_agente", False),
+                      key="chat_agente",
+                      help="Pide clarificaciones antes de buscar si la consulta es ambigua.")
+        with col_f:
+            st.toggle("⚡ Stream", value=st.session_state.get("chat_stream", True),
+                      key="chat_stream", help="Token-por-token en vivo.")
+        with col_g:
+            st.toggle("🧠 Memoria", value=st.session_state.get("chat_memoria", True),
+                      key="chat_memoria",
+                      help="Mantiene el hilo de la conversación (últimos turnos).")
+
+    # Defaults para usuarios normales (si nunca se setearon los toggles)
+    st.session_state.setdefault("chat_graph", False)
+    st.session_state.setdefault("chat_hops", 1)
+    st.session_state.setdefault("chat_informe", False)
+    st.session_state.setdefault("chat_agente", False)
+    st.session_state.setdefault("chat_stream", True)
+    st.session_state.setdefault("chat_memoria", True)
+
+    if st.session_state.get("modo_tecnico"):
+        _toggles_avanzados()
+    else:
+        with st.expander("⚙️ Opciones avanzadas"):
+            st.caption(
+                "Por defecto la mesa ya usa la mejor configuración. Estas opciones "
+                "son para usuarios expertos."
+            )
+            _toggles_avanzados()
+
+    usar_grafo = st.session_state.get("chat_graph", False)
+    max_hops = st.session_state.get("chat_hops", 1)
+    modo_informe = st.session_state.get("chat_informe", False)
+    usar_planner = st.session_state.get("chat_agente", False)
+    usar_streaming = st.session_state.get("chat_stream", True)
+    usar_memoria = st.session_state.get("chat_memoria", True)
 
     # Indicador de memoria activa + botón limpiar
     n_turnos = len([m for m in st.session_state.get("historial_chat", [])
@@ -1432,6 +1503,51 @@ with tab_stats:
 # ===========================================================================
 
 with tab_runs:
+    # ----------------------------------------------------------------------
+    # Solicitudes de acceso pendientes
+    # ----------------------------------------------------------------------
+    st.markdown("### 🔓 Solicitudes de acceso")
+    pendientes = api.usuarios_pendientes()
+    if not pendientes:
+        st.success("No hay solicitudes pendientes. ✓")
+    else:
+        st.warning(f"⏳ {len(pendientes)} usuario(s) esperando aprobación:")
+        for p in pendientes:
+            c1, c2, c3 = st.columns([3, 1, 1])
+            with c1:
+                st.markdown(
+                    f"**{p['name']}** · {p['email']}  \n"
+                    f"<span style='color:#64748b;font-size:12px;'>"
+                    f"{p.get('organization') or 's/org'} · {p.get('role') or 's/rol'}</span>",
+                    unsafe_allow_html=True,
+                )
+            with c2:
+                if st.button("✅ Aprobar", key=f"apr_{p['email']}",
+                             use_container_width=True, type="primary"):
+                    if api.aprobar_usuario(p["email"]):
+                        st.toast(f"Aprobado: {p['email']}", icon="✅")
+                        st.rerun()
+            with c3:
+                if st.button("❌ Rechazar", key=f"rej_{p['email']}",
+                             use_container_width=True):
+                    if api.rechazar_usuario(p["email"]):
+                        st.toast(f"Rechazado: {p['email']}", icon="🚫")
+                        st.rerun()
+
+    with st.expander("🎚️ Ajustar límite de consultas por día de un usuario"):
+        st.caption("Default: 20 consultas/día. Poné 0 para dejarlo sin límite.")
+        with st.form("form_limite"):
+            lim_email = st.text_input("Email del usuario", key="lim_email")
+            lim_valor = st.number_input("Límite diario", min_value=0, max_value=10000,
+                                        value=20, step=5, key="lim_valor")
+            if st.form_submit_button("Actualizar límite", type="primary"):
+                if lim_email.strip() and api.set_limite_diario(lim_email.strip(), int(lim_valor)):
+                    st.success(f"Límite de {lim_email.strip()} → {int(lim_valor)}/día")
+                else:
+                    st.error("No se pudo actualizar (¿email correcto?).")
+
+    st.markdown("---")
+
     # ----------------------------------------------------------------------
     # Gestión de usuarios — reset de PIN
     # ----------------------------------------------------------------------

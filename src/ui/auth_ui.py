@@ -139,9 +139,10 @@ def render_auth(api_base: str) -> None:
         'margin:8px 0 16px;">'
         '<div style="font-size:24px;margin-bottom:8px;">👤 Acceso a la Mesa Experta</div>'
         '<div style="color:#1e3a8a;font-size:13px;line-height:1.5;">'
-        'Regístrese con su email para identificar sus consultas y poder '
-        'analizar la calidad del servicio. Su email no se comparte ni se usa '
-        'para enviar comunicaciones.'
+        'Regístrese con su email para solicitar acceso. Un administrador '
+        'aprobará su solicitud y podrá ingresar. Su email se usa solo para '
+        'identificar sus consultas y medir la calidad del servicio; no se '
+        'comparte ni se usa para comunicaciones.'
         '</div></div>',
         unsafe_allow_html=True,
     )
@@ -352,7 +353,7 @@ def render_auth(api_base: str) -> None:
                             # Mostrar el recovery code una única vez
                             if data.get("recovery_code"):
                                 st.session_state.recovery_code_pendiente = data["recovery_code"]
-                            st.toast("Cuenta creada ✓", icon="✅")
+                            st.toast("Solicitud de acceso enviada ✓", icon="📨")
                             st.rerun()
                         elif r.status_code == 409:
                             st.warning(

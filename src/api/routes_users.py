@@ -108,8 +108,14 @@ async def register(
         raise HTTPException(500, "No se pudo registrar el usuario.")
 
     # Auto-login inmediato. El recovery_code viaja UNA sola vez.
+    # El usuario queda 'pending' hasta que un admin lo apruebe.
     perfil, _ = await users_store.login_usuario(pool, payload.email, payload.pin)
-    return {"ok": True, "user": perfil, "recovery_code": recovery_code}
+    return {
+        "ok": True,
+        "user": perfil,
+        "recovery_code": recovery_code,
+        "pending": (perfil or {}).get("status") != "approved",
+    }
 
 
 @router.post("/login", dependencies=[Depends(limitar_auth)])
@@ -220,3 +226,60 @@ async def survey_summary(
 ) -> dict:
     """Agregado de encuestas — solo administración (X-Admin-Key)."""
     return await users_store.resumen_encuestas(pool, limit=limit)
+
+
+# -----------------------------------------------------------------------------
+# Administración de acceso (X-Admin-Key)
+# -----------------------------------------------------------------------------
+
+class AccionAccesoPayload(BaseModel):
+    email: str
+
+
+class LimitePayload(BaseModel):
+    email: str
+    limite: int = Field(..., ge=0, le=10000)
+
+
+@router.get("/pending", dependencies=[Depends(verificar_admin)])
+async def usuarios_pendientes(
+    pool: AsyncConnectionPool = Depends(get_pool),
+) -> list[dict]:
+    """Usuarios que solicitaron acceso y esperan aprobación."""
+    return await users_store.listar_pendientes(pool)
+
+
+@router.post("/approve", dependencies=[Depends(verificar_admin)])
+async def aprobar(
+    payload: AccionAccesoPayload,
+    pool: AsyncConnectionPool = Depends(get_pool),
+) -> dict:
+    """Aprueba el acceso de un usuario."""
+    ok = await users_store.set_status_usuario(pool, payload.email, "approved")
+    if not ok:
+        raise HTTPException(404, "Usuario no encontrado.")
+    return {"ok": True}
+
+
+@router.post("/reject", dependencies=[Depends(verificar_admin)])
+async def rechazar(
+    payload: AccionAccesoPayload,
+    pool: AsyncConnectionPool = Depends(get_pool),
+) -> dict:
+    """Rechaza (o revoca) el acceso de un usuario."""
+    ok = await users_store.set_status_usuario(pool, payload.email, "rejected")
+    if not ok:
+        raise HTTPException(404, "Usuario no encontrado.")
+    return {"ok": True}
+
+
+@router.post("/set-limit", dependencies=[Depends(verificar_admin)])
+async def set_limite(
+    payload: LimitePayload,
+    pool: AsyncConnectionPool = Depends(get_pool),
+) -> dict:
+    """Ajusta el límite de consultas por día de un usuario."""
+    ok = await users_store.set_limite_diario(pool, payload.email, payload.limite)
+    if not ok:
+        raise HTTPException(404, "Usuario no encontrado.")
+    return {"ok": True}
