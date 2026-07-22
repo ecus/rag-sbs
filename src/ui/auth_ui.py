@@ -144,7 +144,10 @@ def render_auth(api_base: str) -> None:
             align-items: flex-start !important;
             justify-content: flex-start !important;
         }
-        [data-testid="stMainBlockContainer"], .block-container {
+        /* Alta especificidad para ganarle al padding-bottom:220px global
+           (que existe para el chat input y estiraba la tarjeta de login). */
+        html body [data-testid="stApp"] section[data-testid="stMain"]
+        div[data-testid="stMainBlockContainer"] {
             max-width: 420px !important;
             margin: 1.5rem auto 1.5rem !important;
             padding: 1.6rem 1.8rem 1.4rem !important;
@@ -155,8 +158,10 @@ def render_auth(api_base: str) -> None:
             box-shadow: 0 10px 34px rgba(15,23,42,0.08) !important;
             height: fit-content !important;
             min-height: 0 !important;
-            align-self: flex-start !important;
-            flex: 0 0 auto !important;
+        }
+        html body [data-testid="stApp"] section[data-testid="stMain"]
+        div[data-testid="stMainBlockContainer"] > div[data-testid="stVerticalBlock"] {
+            padding-bottom: 0 !important;
         }
         [data-testid="stForm"] {
             border: none !important; padding: 0 !important; box-shadow: none !important;
