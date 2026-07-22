@@ -283,7 +283,7 @@ def _render_conversaciones(api: APIClient, user: dict) -> None:
     """Sidebar estilo ChatGPT: nueva conversación + lista + renombrar/borrar."""
     email = user.get("email")
 
-    if st.button("➕ Nueva conversación", use_container_width=True,
+    if st.button("Nueva conversación", use_container_width=True,
                  type="primary", key="conv_nueva"):
         conv = api.conv_crear(email=email, user_id=user.get("id"))
         if conv:
@@ -302,11 +302,11 @@ def _render_conversaciones(api: APIClient, user: dict) -> None:
         st.caption("Aún no tenés conversaciones guardadas.")
         return
 
-    st.caption(f"💬 Tus conversaciones ({len(convs)})")
+    st.caption(f"Tus conversaciones ({len(convs)})")
     activa = st.session_state.get("conversation_id")
     for c in convs:
         es_activa = c["id"] == activa
-        etiqueta = ("🟢 " if es_activa else "") + (c["title"] or "Sin título")
+        etiqueta = ("● " if es_activa else "") + (c["title"] or "Sin título")
         if st.button(etiqueta, use_container_width=True,
                      key=f"conv_{c['id']}",
                      type="secondary",
@@ -320,7 +320,7 @@ def _render_conversaciones(api: APIClient, user: dict) -> None:
 
     # Controles de la conversación activa
     if activa:
-        with st.expander("✏️ Renombrar / 🗑 borrar conversación activa"):
+        with st.expander("Renombrar o borrar conversación activa"):
             nuevo = st.text_input("Nuevo título", key="conv_rename_input")
             col_r1, col_r2 = st.columns(2)
             if col_r1.button("Renombrar", use_container_width=True, key="conv_rename_go"):
@@ -328,7 +328,7 @@ def _render_conversaciones(api: APIClient, user: dict) -> None:
                     st.session_state.conversaciones = None
                     st.toast("Renombrada", icon="✏️")
                     st.rerun()
-            if col_r2.button("🗑 Borrar", use_container_width=True, key="conv_delete_go"):
+            if col_r2.button("Borrar", use_container_width=True, key="conv_delete_go"):
                 if api.conv_borrar(activa, email):
                     st.session_state.conversation_id = None
                     st.session_state.historial_chat = []
@@ -616,9 +616,11 @@ with st.sidebar:
     # Logo + claim siempre
     st.markdown(
         '<div style="text-align:center;padding:8px 0 16px;">'
-        '<div style="font-size:32px;line-height:1;">🏛️</div>'
-        '<div style="font-weight:700;font-size:18px;color:#003d7a;'
-        'margin-top:6px;">Mesa Experta</div>'
+        '<div style="display:inline-flex;align-items:center;justify-content:center;'
+        'width:40px;height:40px;background:#0d2b5c;color:#fff;border-radius:10px;'
+        'font-weight:700;font-size:13px;letter-spacing:1px;">SBS</div>'
+        '<div style="font-weight:600;font-size:17px;color:#0d2b5c;'
+        'margin-top:8px;">Mesa Experta</div>'
         '<div style="font-size:11px;color:#64748b;letter-spacing:0.5px;'
         'text-transform:uppercase;">Regulación Bancaria · Perú</div>'
         '</div>',
@@ -633,18 +635,18 @@ with st.sidebar:
         _restante = ""
         if _last:
             _seg = max(0, int(INACTIVITY_LIMIT_SEC - (datetime.now() - _last).total_seconds()))
-            _restante = f" · ⏳ {_seg//60}m {_seg%60:02d}s"
+            _restante = f" · {_seg//60}m {_seg%60:02d}s"
         st.markdown(
-            f'<div style="background:#f0fdf4;border:1px solid #86efac;'
+            f'<div style="background:#f8fafc;border:1px solid #e2e8f0;'
             f'border-radius:8px;padding:8px 12px;margin-bottom:12px;'
-            f'font-size:12px;color:#166534;">'
-            f'👤 <b>{_u.get("name","")}</b><br>'
-            f'<span style="color:#475569;font-size:10px;">'
+            f'font-size:12px;color:#0f172a;">'
+            f'<b>{_u.get("name","")}</b><br>'
+            f'<span style="color:#64748b;font-size:10px;">'
             f'{_u.get("email","")}{_restante}</span>'
             f'</div>',
             unsafe_allow_html=True,
         )
-        if st.button("🔚 Salir", use_container_width=True, key="logout",
+        if st.button("Salir", use_container_width=True, key="logout",
                      help="Cierra la sesión y abre la encuesta de salida"):
             disparar_logout_con_encuesta(reason="manual")
             st.rerun()
@@ -654,24 +656,18 @@ with st.sidebar:
 
     if not st.session_state.modo_tecnico:
         # ----- MODO USUARIO: simple, amigable -----
-        st.markdown("### 💡 ¿Cómo preguntar?")
-        st.markdown(
-            """
-            <div style="background:#f1f5f9;padding:12px;border-radius:8px;
-            font-size:13px;line-height:1.5;color:#334155;">
-            <p style="margin:0 0 8px 0;"><b>✅ Buenas preguntas:</b></p>
-            <ul style="margin:0 0 0 16px;padding:0;">
-              <li>¿Qué dice la Resolución SBS 11356-2008 sobre clasificación del deudor?</li>
-              <li>¿Cuáles son las provisiones procíclicas vigentes?</li>
-              <li>¿Qué cuentas afecta una titulización según el Manual de Contabilidad?</li>
-            </ul>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        st.caption("La mesa busca solo en normativa oficial publicada (SBS, BCRP, Congreso, MEF, SMV).")
+        with st.expander("¿Cómo preguntar?"):
+            st.caption(
+                "Escribí en lenguaje natural, mencionando la norma, artículo o "
+                "cuenta si lo sabés. Ejemplos:"
+            )
+            st.markdown(
+                "- ¿Qué dice la Resolución SBS 11356-2008 sobre clasificación del deudor?\n"
+                "- ¿Cuáles son las provisiones procíclicas vigentes?\n"
+                "- ¿Qué cuentas afecta una titulización según el Manual de Contabilidad?"
+            )
 
-        st.markdown("### 📚 Cobertura")
+        st.markdown("### Cobertura")
         try:
             by_issuer = api.stats_by_issuer()
             items = by_issuer.get("por_issuer", [])
@@ -685,7 +681,7 @@ with st.sidebar:
         st.markdown("---")
         # El panel de administración es EXCLUSIVO de la cuenta admin.
         if es_admin():
-            if st.button("🔧 Panel de administración", use_container_width=True,
+            if st.button("Panel de administración", use_container_width=True,
                          help="Dashboard exclusivo de tu cuenta"):
                 st.session_state.modo_tecnico = True
                 st.rerun()
@@ -774,12 +770,12 @@ with st.sidebar:
 
 if st.session_state.modo_tecnico:
     tab_chat, tab_stats, tab_grafo, tab_ab, tab_runs = st.tabs(
-        ["💬 Consultar", "🧩 Tópicos", "🧠 Mapa regulatorio",
-         "🔬 A/B (técnico)", "⚙️ Administración"]
+        ["Consultar", "Tópicos", "Mapa regulatorio",
+         "A/B (técnico)", "Administración"]
     )
 else:
     tab_chat, tab_stats, tab_grafo, tab_ab, tab_runs = st.tabs(
-        ["💬 Consultar", "🧩 Tópicos", "🧠 Mapa regulatorio",
+        ["Consultar", "Tópicos", "Mapa regulatorio",
          "  ", "  "]  # tabs casi invisibles cuando modo usuario
     )
 
@@ -789,7 +785,7 @@ else:
 # ===========================================================================
 
 with tab_chat:
-    st.markdown("### 💬 Consulte a la mesa experta")
+    st.markdown("### Consulte a la mesa experta")
     st.caption(
         "Respuestas basadas **únicamente en normativa oficial publicada** "
         "(SBS, BCRP, Congreso, MEF, SMV, SUNAT, INDECOPI). Si no hay evidencia, lo decimos."
@@ -974,6 +970,32 @@ with tab_chat:
         st.session_state.plan_pendiente = None    # {query, questions} o None
     if "consulta_pendiente" not in st.session_state:
         st.session_state.consulta_pendiente = None  # query enriquecido a procesar
+
+    # Empty state: cuando no hay mensajes ni plan pendiente, ofrecer una
+    # bienvenida + ejemplos clickeables que llenan el vacío y guían al usuario.
+    _sin_mensajes = not st.session_state.get("historial_chat")
+    if _sin_mensajes and not st.session_state.get("plan_pendiente") \
+            and not st.session_state.get("consulta_pendiente"):
+        st.markdown(
+            "<div style='text-align:center;color:#64748b;margin:2.5rem 0 1.2rem;'>"
+            "<div style='font-size:15px;color:#334155;font-weight:500;"
+            "margin-bottom:6px;'>¿Sobre qué normativa querés consultar?</div>"
+            "<div style='font-size:13px;'>Escribí tu pregunta abajo, o probá un "
+            "ejemplo:</div></div>",
+            unsafe_allow_html=True,
+        )
+        _ejemplos = [
+            "¿Qué dice la Resolución SBS 11356-2008 sobre clasificación del deudor?",
+            "¿Cuáles son las provisiones procíclicas vigentes?",
+            "Cronograma de un crédito de S/ 1,000 al 38% a 12 meses",
+            "¿Qué se declara en el Reporte Crediticio de Deudores?",
+        ]
+        _ce1, _ce2 = st.columns(2)
+        for _i, _ej in enumerate(_ejemplos):
+            _col = _ce1 if _i % 2 == 0 else _ce2
+            if _col.button(_ej, key=f"ej_{_i}", use_container_width=True):
+                st.session_state.consulta_pendiente = _ej
+                st.rerun()
 
     # Render history
     for idx, mensaje in enumerate(st.session_state.historial_chat):
@@ -2169,4 +2191,6 @@ with tab_runs:
         st.warning(f"Error cargando eventos: {exc}")
 
 
-render_footer()
+# render_footer() removido: la .peru-line quedaba flotando a media página
+# cuando el contenido es corto (con el chat input fijo), pareciendo una barra
+# roja suelta. El acento rojo ya está en el header y en el borde del input.
