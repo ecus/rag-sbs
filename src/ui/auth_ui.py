@@ -141,9 +141,9 @@ def render_auth(api_base: str) -> None:
         <style>
         [data-testid="stAppViewContainer"] { background: #eef2f6; }
         [data-testid="stMainBlockContainer"], .block-container {
-            max-width: 430px !important;
-            margin: 4vh auto 2rem !important;
-            padding: 2rem 2rem 1.4rem !important;
+            max-width: 420px !important;
+            margin: 1.5rem auto 1.5rem !important;
+            padding: 1.6rem 1.8rem 1.2rem !important;
             background: #ffffff !important;
             border: 1px solid #e5e9f0 !important;
             border-radius: 16px !important;
@@ -404,18 +404,19 @@ def render_auth(api_base: str) -> None:
                     except Exception as e:  # noqa: BLE001
                         st.error(f"No se pudo conectar al servidor: {e}")
 
-    st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
-    st.caption(
-        "**Política de datos**: su email y sus consultas se usan "
-        "únicamente para identificarlo y medir la calidad del servicio. "
-        "Registramos datos técnicos (IP, latencia, endpoint) con fines de "
-        "seguridad y monitoreo. No compartimos sus datos con fines comerciales "
-        "ni los usamos para comunicaciones; para operar el servicio podemos usar "
-        "proveedores de infraestructura y monitoreo que procesan datos técnicos "
-        "con retención limitada. "
-        f"La sesión se cierra tras **{INACTIVITY_LIMIT_SEC // 60} min** de "
-        "inactividad. Puede eliminar sus datos de la aplicación cuando quiera (abajo)."
-    )
+    st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
+    with st.expander("Política de datos y privacidad"):
+        st.caption(
+            "Su email y sus consultas se usan únicamente para identificarlo y "
+            "medir la calidad del servicio. Registramos datos técnicos (IP, "
+            "latencia, endpoint) con fines de seguridad y monitoreo. No "
+            "compartimos sus datos con fines comerciales ni los usamos para "
+            "comunicaciones; para operar el servicio podemos usar proveedores de "
+            "infraestructura y monitoreo que procesan datos técnicos con "
+            "retención limitada. "
+            f"La sesión se cierra tras **{INACTIVITY_LIMIT_SEC // 60} min** de "
+            "inactividad. Puede eliminar sus datos cuando quiera (abajo)."
+        )
 
     with st.expander("Eliminar mi cuenta y todos mis datos"):
         st.caption(
