@@ -140,7 +140,10 @@ def render_auth(api_base: str) -> None:
         """
         <style>
         [data-testid="stAppViewContainer"] { background: #eef2f6; }
-        [data-testid="stMain"] { align-items: flex-start !important; }
+        section[data-testid="stMain"] {
+            align-items: flex-start !important;
+            justify-content: flex-start !important;
+        }
         [data-testid="stMainBlockContainer"], .block-container {
             max-width: 420px !important;
             margin: 1.5rem auto 1.5rem !important;
@@ -151,7 +154,9 @@ def render_auth(api_base: str) -> None:
             border-radius: 16px !important;
             box-shadow: 0 10px 34px rgba(15,23,42,0.08) !important;
             height: fit-content !important;
-            min-height: unset !important;
+            min-height: 0 !important;
+            align-self: flex-start !important;
+            flex: 0 0 auto !important;
         }
         [data-testid="stForm"] {
             border: none !important; padding: 0 !important; box-shadow: none !important;
