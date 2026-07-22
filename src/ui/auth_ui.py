@@ -133,16 +133,30 @@ def render_auth(api_base: str) -> None:
     if esta_logueado():
         return
 
+    # Centrar y acotar el ancho SOLO en la pantalla de acceso (render_auth
+    # llama a st.stop(), así que este CSS no afecta al chat).
+    st.markdown(
+        """
+        <style>
+        [data-testid="stMainBlockContainer"], .block-container {
+            max-width: 560px !important;
+            margin: 0 auto !important;
+            padding-top: 1.5rem !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     st.markdown(
         '<div style="background:linear-gradient(135deg,#eff6ff,#dbeafe);'
-        'border:1px solid #93c5fd;border-radius:12px;padding:20px;'
-        'margin:8px 0 16px;">'
-        '<div style="font-size:24px;margin-bottom:8px;">👤 Acceso a la Mesa Experta</div>'
-        '<div style="color:#1e3a8a;font-size:13px;line-height:1.5;">'
-        'Regístrese con su email para solicitar acceso. Un administrador '
-        'aprobará su solicitud y podrá ingresar. Su email se usa solo para '
-        'identificar sus consultas y medir la calidad del servicio; no se '
-        'comparte ni se usa para comunicaciones.'
+        'border:1px solid #93c5fd;border-radius:12px;padding:18px 20px;'
+        'margin:0 0 18px;text-align:center;">'
+        '<div style="font-size:22px;font-weight:600;color:#1e3a8a;'
+        'margin-bottom:6px;">👤 Acceso a la Mesa Experta</div>'
+        '<div style="color:#1e40af;font-size:13px;line-height:1.5;">'
+        'Ingresá con tu email y PIN, o registrate para solicitar acceso. '
+        'Un administrador aprobará tu solicitud.'
         '</div></div>',
         unsafe_allow_html=True,
     )
@@ -372,17 +386,23 @@ def render_auth(api_base: str) -> None:
                         st.error(f"No se pudo conectar al servidor: {e}")
 
     st.caption(
-        "🔒 **Política de datos** (Ley 29733): el email se usa únicamente para "
-        "identificar sus consultas y medir la calidad del servicio. No se comparte "
-        "ni se usa para comunicaciones. Sus consultas se registran con ese fin. "
+        "🔒 **Política de datos** (Ley 29733): su email y sus consultas se usan "
+        "únicamente para identificarlo y medir la calidad del servicio. "
+        "Registramos datos técnicos (IP, latencia, endpoint) con fines de "
+        "seguridad y monitoreo. No compartimos sus datos con fines comerciales "
+        "ni los usamos para comunicaciones; para operar el servicio podemos usar "
+        "proveedores de infraestructura y monitoreo que procesan datos técnicos "
+        "con retención limitada. "
         f"La sesión se cierra tras **{INACTIVITY_LIMIT_SEC // 60} min** de "
-        "inactividad. Puede eliminar todos sus datos cuando quiera (abajo)."
+        "inactividad. Puede eliminar sus datos de la aplicación cuando quiera (abajo)."
     )
 
     with st.expander("🗑 Eliminar mi cuenta y todos mis datos"):
         st.caption(
-            "Borra su usuario y todo su historial de consultas. Las encuestas "
-            "que haya respondido se conservan **anonimizadas** (sin email)."
+            "Borra su usuario, su historial de consultas, sus conversaciones y "
+            "su feedback. Las encuestas de satisfacción se conservan "
+            "**anonimizadas** (sin email). Los logs técnicos de monitoreo se "
+            "eliminan automáticamente al expirar su retención."
         )
         with st.form("form_delete_me"):
             del_email = st.text_input("Email", key="del_email")

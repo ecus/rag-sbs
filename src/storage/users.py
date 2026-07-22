@@ -265,6 +265,11 @@ async def borrar_usuario(
                 "UPDATE feedback_surveys SET email = NULL WHERE user_id = %s",
                 (uid,),
             )
+            # Borrar el feedback like/dislike (contiene email + pregunta + comentario)
+            await cur.execute(
+                "DELETE FROM response_feedback WHERE LOWER(email) = LOWER(%s)",
+                (email,),
+            )
             # Borrar historial de consultas (alias = email en query_log)
             await cur.execute(
                 "DELETE FROM query_log WHERE LOWER(alias) = LOWER(%s)",
@@ -274,7 +279,12 @@ async def borrar_usuario(
                 "DELETE FROM user_sessions WHERE LOWER(alias) = LOWER(%s)",
                 (email,),
             )
-            # Borrar el usuario (FK pone user_id NULL en surveys)
+            # Borrar conversaciones del usuario (por email, además del cascade por FK)
+            await cur.execute(
+                "DELETE FROM conversations WHERE LOWER(email) = LOWER(%s)",
+                (email,),
+            )
+            # Borrar el usuario (FK pone user_id NULL en surveys / cascade en conv)
             await cur.execute("DELETE FROM users WHERE id = %s", (uid,))
             logger.info("Usuario %s eliminado a pedido (derecho de supresión)", uid)
             return True, None
