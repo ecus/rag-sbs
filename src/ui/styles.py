@@ -50,13 +50,12 @@ code, pre, .mono { font-family: 'JetBrains Mono', monospace !important; }
 
 /* ── Header SBS edge-to-edge ─────────────────────────────────────────────── */
 .sbs-header {
-  display: flex; align-items: center; gap: 18px;
-  padding: 20px 40px;
-  background: linear-gradient(180deg, #003d7a 0%, #002d5a 100%);
+  display: flex; align-items: center; gap: 16px;
+  padding: 16px 32px;
+  background: #0f2547;
   border-bottom: 3px solid var(--sbs-red);
   color: white;
-  box-shadow: 0 2px 8px rgba(13, 27, 42, 0.08);
-  margin-bottom: 2rem;
+  margin-bottom: 1.6rem;
 }
 .sbs-header .sbs-logo {
   width: 48px; height: 48px; border-radius: 6px;
@@ -113,40 +112,86 @@ code, pre, .mono { font-family: 'JetBrains Mono', monospace !important; }
 /* contenido de tabs con padding */
 [data-baseweb="tab-panel"] { padding: 24px 40px 0; }
 
-/* ── Sidebar institucional ───────────────────────────────────────────────── */
+/* ── Sidebar NAVY cohesivo ───────────────────────────────────────────────── */
 [data-testid="stSidebar"] {
-  background: #f7f9fc !important;
-  border-right: 1px solid var(--sbs-border);
+  background: #0f2547 !important;
+  border-right: none !important;
 }
-/* Quitar el padding-top del contenedor para que la franja azul llegue al borde */
 [data-testid="stSidebar"] > div:first-child { padding-top: 0 !important; }
 [data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
-  padding: 0 0.9rem 1rem;
+  padding: 0 0.85rem 1rem;
+  gap: 0.5rem !important;
 }
-/* Franja azul del sidebar: continúa la banda del header */
+/* Textos claros por defecto dentro del sidebar */
+[data-testid="stSidebar"] p,
+[data-testid="stSidebar"] span,
+[data-testid="stSidebar"] label,
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] {
+  color: #c7d3e6 !important;
+}
+/* Marca superior: badge + nombre, integra con el header */
 .sidebar-brand {
-  margin: 0 -0.9rem 1rem;
-  padding: 0;
-  height: 91px;
-  background: linear-gradient(180deg, #003d7a 0%, #002d5a 100%);
-  border-bottom: 3px solid var(--sbs-red);
-  display: flex; align-items: center; padding-left: 1rem;
+  margin: 0 -0.85rem 0.6rem;
+  height: 74px;
+  border-bottom: 1px solid rgba(255,255,255,.09);
+  display: flex; align-items: center; gap: 10px; padding-left: 1rem;
 }
 .sidebar-brand-badge {
-  width: 44px; height: 44px; border-radius: 8px;
-  background: #fff; color: var(--sbs-blue);
+  width: 36px; height: 36px; border-radius: 8px;
+  background: #fff; color: #0f2547;
   display: flex; align-items: center; justify-content: center;
-  font-weight: 700; font-size: 14px; letter-spacing: 1px;
+  font-weight: 700; font-size: 12px; letter-spacing: 1px;
 }
+.sidebar-brand-name { line-height: 1.15; }
+.sidebar-brand-name b { color: #fff; font-size: 13.5px; font-weight: 600; }
+.sidebar-brand-name span { color: #8aa0bf !important; font-size: 10px; }
+/* Encabezados de sección (Cobertura, etc.) */
 [data-testid="stSidebar"] h2,
 [data-testid="stSidebar"] h3 {
-  font-size: 10.5px !important; text-transform: uppercase;
-  letter-spacing: 0.12em; color: var(--sbs-blue) !important;
+  font-size: 10px !important; text-transform: uppercase;
+  letter-spacing: 0.1em; color: #7d93b3 !important;
   font-weight: 600 !important;
-  margin-top: 1.4rem !important; margin-bottom: 0.6rem !important;
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--sbs-border);
+  margin: 1rem 0 0.4rem !important; padding: 0 !important;
+  border: none !important;
 }
+/* Caja de usuario (dark) */
+.sidebar-user {
+  background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.08);
+  border-radius: 8px; padding: 8px 11px; margin-bottom: 10px; font-size: 12px;
+}
+.sidebar-user b { color: #fff; }
+.sidebar-user span { color: #8aa0bf !important; font-size: 10px; }
+/* Botones del sidebar */
+[data-testid="stSidebar"] .stButton > button {
+  background: rgba(255,255,255,.06) !important;
+  border: 1px solid rgba(255,255,255,.12) !important;
+  color: #dbe4f0 !important;
+  font-size: 12.5px !important;
+  text-align: left !important;
+  justify-content: flex-start !important;
+}
+[data-testid="stSidebar"] .stButton > button:hover {
+  background: rgba(255,255,255,.12) !important;
+  border-color: rgba(255,255,255,.22) !important;
+  color: #fff !important;
+}
+[data-testid="stSidebar"] .stButton > button[kind="primary"] {
+  background: #2563eb !important; border-color: #2563eb !important;
+  color: #fff !important; text-align: center !important;
+  justify-content: center !important; font-weight: 500 !important;
+}
+[data-testid="stSidebar"] .stButton > button[kind="primary"]:hover {
+  background: #1d4ed8 !important; border-color: #1d4ed8 !important;
+}
+/* Métrica de cobertura en claro */
+[data-testid="stSidebar"] [data-testid="stMetricValue"] { color: #fff !important; }
+[data-testid="stSidebar"] [data-testid="stMetricLabel"] { color: #7d93b3 !important; }
+/* Expanders del sidebar (renombrar conversación) */
+[data-testid="stSidebar"] [data-testid="stExpander"] details {
+  background: transparent !important; border: 1px solid rgba(255,255,255,.1) !important;
+}
+[data-testid="stSidebar"] [data-testid="stExpander"] summary { color: #b9c7db !important; }
+[data-testid="stSidebar"] hr { border-color: rgba(255,255,255,.1) !important; }
 
 /* ── Métricas — números grandes en azul SBS ──────────────────────────────── */
 [data-testid="stMetricValue"] {
@@ -220,23 +265,29 @@ code, pre, .mono { font-family: 'JetBrains Mono', monospace !important; }
   color: white !important;
 }
 
-/* ── Inputs (text, search, chat) ─────────────────────────────────────── */
-.stTextInput input, .stTextArea textarea,
-[data-testid="stChatInput"] textarea {
+/* ── Inputs (text, search) ───────────────────────────────────────────── */
+.stTextInput input, .stTextArea textarea {
   border-radius: 6px !important;
   border: 1px solid var(--sbs-border) !important;
   font-size: 14px !important;
 }
-.stTextInput input:focus, .stTextArea textarea:focus,
-[data-testid="stChatInput"] textarea:focus {
+.stTextInput input:focus, .stTextArea textarea:focus {
   border-color: var(--sbs-blue) !important;
   box-shadow: 0 0 0 3px rgba(0, 61, 122, 0.08) !important;
 }
-/* Altura natural del textarea del chat (una línea que crece al escribir) */
+/* Chat input compacto: el textarea sin borde propio (lo tiene el pill),
+   altura de una línea que crece al escribir. */
 [data-testid="stChatInput"] textarea {
-  min-height: 40px !important;
-  padding-top: 9px !important;
-  padding-bottom: 9px !important;
+  border: none !important;
+  box-shadow: none !important;
+  font-size: 14px !important;
+  min-height: 26px !important;
+  max-height: 140px !important;
+  padding-top: 8px !important;
+  padding-bottom: 8px !important;
+}
+[data-testid="stChatInput"] textarea:focus {
+  border: none !important; box-shadow: none !important;
 }
 
 /* ── Dataframes ─────────────────────────────────────────────────────── */
@@ -851,11 +902,14 @@ section.main > div.block-container,
 
 [data-testid="stChatInput"] > div,
 div[data-testid="stChatInput"] > div {
-  border-radius: 28px !important;
-  border: 1.5px solid var(--sbs-blue) !important;
-  box-shadow: 0 2px 10px rgba(0,61,122,0.12) !important;
-  background: #fbfcfe !important;
-  transition: border-color 0.2s, box-shadow 0.2s !important;
+  border-radius: 22px !important;
+  border: 1px solid #cbd5e1 !important;
+  box-shadow: 0 1px 4px rgba(15,23,42,0.06) !important;
+  background: #fff !important;
+  min-height: 44px !important;
+  align-items: center !important;
+  padding: 2px 6px 2px 8px !important;
+  transition: border-color 0.15s, box-shadow 0.15s !important;
 }
 [data-testid="stChatInput"] > div:focus-within {
   border-color: var(--sbs-blue) !important;
@@ -864,11 +918,12 @@ div[data-testid="stChatInput"] > div {
 }
 
 [data-testid="stChatInputSubmitButton"] {
-  background: #003d7a !important;
+  background: #0f2547 !important;
   color: white !important;
   border-radius: 50% !important;
-  width: 40px !important;
-  height: 40px !important;
+  width: 34px !important;
+  height: 34px !important;
+  min-height: 34px !important;
 }
 [data-testid="stChatInputSubmitButton"]:hover {
   background: #0656a5 !important;

@@ -613,11 +613,12 @@ if "modo_tecnico" not in st.session_state:
     st.session_state.modo_tecnico = False
 
 with st.sidebar:
-    # Franja azul superior que continúa la banda del header (integra el sidebar
-    # con el resto del diseño; el badge, no el nombre, para no duplicar la marca).
+    # Marca superior del sidebar (badge + nombre), integrada al tema navy.
     st.markdown(
         '<div class="sidebar-brand">'
         '<div class="sidebar-brand-badge">SBS</div>'
+        '<div class="sidebar-brand-name"><b>Mesa Experta</b><br>'
+        '<span>Regulación · Perú</span></div>'
         '</div>',
         unsafe_allow_html=True,
     )
@@ -632,12 +633,9 @@ with st.sidebar:
             _seg = max(0, int(INACTIVITY_LIMIT_SEC - (datetime.now() - _last).total_seconds()))
             _restante = f" · {_seg//60}m {_seg%60:02d}s"
         st.markdown(
-            f'<div style="background:#f8fafc;border:1px solid #e2e8f0;'
-            f'border-radius:8px;padding:8px 12px;margin-bottom:12px;'
-            f'font-size:12px;color:#0f172a;">'
+            f'<div class="sidebar-user">'
             f'<b>{_u.get("name","")}</b><br>'
-            f'<span style="color:#64748b;font-size:10px;">'
-            f'{_u.get("email","")}{_restante}</span>'
+            f'<span>{_u.get("email","")}{_restante}</span>'
             f'</div>',
             unsafe_allow_html=True,
         )
