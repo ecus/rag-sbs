@@ -166,8 +166,8 @@ section[data-testid="stMain"] [data-testid="stMainBlockContainer"] {
 }
 .sidebar-user b { color: #fff; }
 .sidebar-user span { color: #8aa0bf !important; font-size: 10px; }
-/* Botones del sidebar */
-[data-testid="stSidebar"] .stButton > button {
+/* Botones del sidebar — usar button[kind] (mas especifico, le gana al default) */
+[data-testid="stSidebar"] button[kind="secondary"] {
   background: rgba(255,255,255,.08) !important;
   border: 1px solid rgba(255,255,255,.16) !important;
   color: #eaf0f8 !important;
@@ -175,18 +175,20 @@ section[data-testid="stMain"] [data-testid="stMainBlockContainer"] {
   text-align: left !important;
   justify-content: flex-start !important;
 }
-[data-testid="stSidebar"] .stButton > button:hover {
+[data-testid="stSidebar"] button[kind="secondary"] p { color: #eaf0f8 !important; }
+[data-testid="stSidebar"] button[kind="secondary"]:hover {
   background: rgba(255,255,255,.16) !important;
   border-color: rgba(255,255,255,.3) !important;
   color: #fff !important;
 }
-[data-testid="stSidebar"] .stButton > button p { color: inherit !important; }
-[data-testid="stSidebar"] .stButton > button[kind="primary"] {
+[data-testid="stSidebar"] button[kind="secondary"]:hover p { color: #fff !important; }
+[data-testid="stSidebar"] button[kind="primary"] {
   background: #2563eb !important; border-color: #2563eb !important;
   color: #fff !important; text-align: center !important;
   justify-content: center !important; font-weight: 500 !important;
 }
-[data-testid="stSidebar"] .stButton > button[kind="primary"]:hover {
+[data-testid="stSidebar"] button[kind="primary"] p { color: #fff !important; }
+[data-testid="stSidebar"] button[kind="primary"]:hover {
   background: #1d4ed8 !important; border-color: #1d4ed8 !important;
 }
 /* Métrica de cobertura en claro */
