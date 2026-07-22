@@ -887,7 +887,8 @@ def render_header() -> None:
         '<div class="sbs-logo">SBS</div>'
         '<div class="sbs-titulos">'
         '<h1>Mesa Experta Regulatoria</h1>'
-        '<span class="subtitulo">RAG Agéntico · Knowledge Graph · Cerebro Digital</span>'
+        '<span class="subtitulo">Consultas sobre normativa financiera peruana '
+        '· <span style="opacity:.7;">herramienta independiente, no oficial</span></span>'
         '</div></div>',
         unsafe_allow_html=True,
     )

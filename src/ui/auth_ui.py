@@ -386,7 +386,7 @@ def render_auth(api_base: str) -> None:
                         st.error(f"No se pudo conectar al servidor: {e}")
 
     st.caption(
-        "🔒 **Política de datos** (Ley 29733): su email y sus consultas se usan "
+        "🔒 **Política de datos**: su email y sus consultas se usan "
         "únicamente para identificarlo y medir la calidad del servicio. "
         "Registramos datos técnicos (IP, latencia, endpoint) con fines de "
         "seguridad y monitoreo. No compartimos sus datos con fines comerciales "
