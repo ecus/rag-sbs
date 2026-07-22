@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from datetime import datetime, timedelta
 from typing import Any
@@ -9,8 +10,12 @@ from typing import Any
 import httpx
 import streamlit as st
 
-# Timeout de inactividad por defecto (5 minutos)
-INACTIVITY_LIMIT_SEC = 5 * 60
+# Timeout de inactividad. Configurable con SESSION_TIMEOUT_MIN (default 20 min).
+try:
+    _TIMEOUT_MIN = max(1, int(os.environ.get("SESSION_TIMEOUT_MIN", "20")))
+except ValueError:
+    _TIMEOUT_MIN = 20
+INACTIVITY_LIMIT_SEC = _TIMEOUT_MIN * 60
 
 EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$")
 

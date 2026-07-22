@@ -613,19 +613,8 @@ if "modo_tecnico" not in st.session_state:
     st.session_state.modo_tecnico = False
 
 with st.sidebar:
-    # Logo + claim siempre
-    st.markdown(
-        '<div style="text-align:center;padding:8px 0 16px;">'
-        '<div style="display:inline-flex;align-items:center;justify-content:center;'
-        'width:40px;height:40px;background:#0d2b5c;color:#fff;border-radius:10px;'
-        'font-weight:700;font-size:13px;letter-spacing:1px;">SBS</div>'
-        '<div style="font-weight:600;font-size:17px;color:#0d2b5c;'
-        'margin-top:8px;">Mesa Experta</div>'
-        '<div style="font-size:11px;color:#64748b;letter-spacing:0.5px;'
-        'text-transform:uppercase;">Regulación Bancaria · Perú</div>'
-        '</div>',
-        unsafe_allow_html=True,
-    )
+    # La marca vive en el header (edge-to-edge). El sidebar arranca directo
+    # con la sesión activa para evitar duplicar el branding.
 
     # Indicador de sesión activa (siempre visible)
     if esta_logueado():
@@ -656,17 +645,8 @@ with st.sidebar:
 
     if not st.session_state.modo_tecnico:
         # ----- MODO USUARIO: simple, amigable -----
-        with st.expander("¿Cómo preguntar?"):
-            st.caption(
-                "Escribí en lenguaje natural, mencionando la norma, artículo o "
-                "cuenta si lo sabés. Ejemplos:"
-            )
-            st.markdown(
-                "- ¿Qué dice la Resolución SBS 11356-2008 sobre clasificación del deudor?\n"
-                "- ¿Cuáles son las provisiones procíclicas vigentes?\n"
-                "- ¿Qué cuentas afecta una titulización según el Manual de Contabilidad?"
-            )
-
+        # (La guía "¿Cómo preguntar?" ahora vive en el empty state del chat,
+        #  con ejemplos clickeables — no se repite en el sidebar.)
         st.markdown("### Cobertura")
         try:
             by_issuer = api.stats_by_issuer()

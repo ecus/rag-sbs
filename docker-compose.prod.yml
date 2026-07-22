@@ -104,6 +104,7 @@ services:
       GOOGLE_API_KEY: ${GOOGLE_API_KEY}
       ADMIN_API_KEY: ${ADMIN_API_KEY}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-eurrutia489@gmail.com}
+      SESSION_TIMEOUT_MIN: ${SESSION_TIMEOUT_MIN:-20}
       PYTHONPATH: /app
     command:
       - streamlit
