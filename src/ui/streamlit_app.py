@@ -578,7 +578,7 @@ def _procesar_streaming(
 
         # Fuentes
         if fuentes_recibidas:
-            st.markdown(f"##### 📚 Fuentes citadas ({len(fuentes_recibidas)})")
+            st.markdown(f"##### Fuentes citadas ({len(fuentes_recibidas)})")
             html = "".join(
                 render_fuente_card(i, f) for i, f in enumerate(fuentes_recibidas, 1)
             )
@@ -685,11 +685,6 @@ with st.sidebar:
                          help="Dashboard exclusivo de tu cuenta"):
                 st.session_state.modo_tecnico = True
                 st.rerun()
-        st.caption(
-            '<div style="font-size:10px;color:#94a3b8;text-align:center;'
-            'margin-top:12px;">v0.3 · Portafolio personal</div>',
-            unsafe_allow_html=True,
-        )
     else:
         # ----- MODO TÉCNICO: dashboard admin (solo cuenta admin) -----
         if not es_admin():
@@ -1009,7 +1004,7 @@ with tab_chat:
                 st.markdown(mensaje["texto"])
             md = mensaje.get("metadatos")
             if md and md.get("sources"):
-                st.markdown(f"##### 📚 Fuentes ({len(md['sources'])})")
+                st.markdown(f"##### Fuentes ({len(md['sources'])})")
                 fuentes_html = "".join(
                     render_fuente_card(i, f)
                     for i, f in enumerate(md["sources"], 1)
@@ -1273,7 +1268,7 @@ with tab_chat:
 
                 # Fuentes VISIBLES por defecto (no en expander) — cards prominentes
                 st.markdown(
-                    f"##### 📚 Fuentes citadas ({len(respuesta['sources'])})",
+                    f"##### Fuentes citadas ({len(respuesta['sources'])})",
                 )
                 fuentes_html = "".join(
                     render_fuente_card(i, f)
@@ -1358,7 +1353,7 @@ with tab_ab:
             st.markdown("**Respuesta A (Vanilla)**")
             st.markdown(resaltar_referencias_fuente(rA["answer"]),
                         unsafe_allow_html=True)
-            st.markdown(f"##### 📚 Fuentes A ({len(rA['sources'])})")
+            st.markdown(f"##### Fuentes A ({len(rA['sources'])})")
             st.markdown(
                 "".join(render_fuente_card(i, f) for i, f in enumerate(rA["sources"], 1)),
                 unsafe_allow_html=True,
@@ -1368,7 +1363,7 @@ with tab_ab:
             st.markdown("**Respuesta B (Graph-Aug)**")
             st.markdown(resaltar_referencias_fuente(rB["answer"]),
                         unsafe_allow_html=True)
-            st.markdown(f"##### 📚 Fuentes B ({len(rB['sources'])})")
+            st.markdown(f"##### Fuentes B ({len(rB['sources'])})")
             st.markdown(
                 "".join(render_fuente_card(i, f) for i, f in enumerate(rB["sources"], 1)),
                 unsafe_allow_html=True,
@@ -1390,7 +1385,7 @@ with tab_ab:
 # ===========================================================================
 
 with tab_grafo:
-    st.markdown("### 🧠 Mapa interactivo de la regulación")
+    st.markdown("### Mapa interactivo de la regulación")
     st.caption(
         "Cada círculo es un documento o entidad legal citada. Las líneas son "
         "referencias entre normas. Click en cualquier nodo para explorarlo."
@@ -1412,7 +1407,7 @@ with tab_grafo:
 # ===========================================================================
 
 with tab_stats:
-    st.markdown("### 🧭 Áreas temáticas de la regulación")
+    st.markdown("### Áreas temáticas de la regulación")
     st.caption(
         "Cada tarjeta agrupa partes del corpus regulatorio que tratan sobre el "
         "mismo tema. Útil para explorar qué cubre la mesa por área (ej. riesgo "
@@ -1580,7 +1575,16 @@ with tab_stats:
                     .properties(height=520)
                 )
                 st.altair_chart(chart, use_container_width=True)
-                st.dataframe(df, use_container_width=True, hide_index=True)
+                # Tabla con nombres de columna en español
+                _tipo_es = {"ley": "Ley", "resolution": "Resolución",
+                            "circular": "Circular", "article": "Artículo",
+                            "anexo": "Anexo", "topic": "Tópico"}
+                df_es = df.rename(columns={
+                    "kind": "Tipo", "label": "Norma", "citaciones": "Citaciones",
+                })
+                if "Tipo" in df_es:
+                    df_es["Tipo"] = df_es["Tipo"].map(lambda v: _tipo_es.get(v, v))
+                st.dataframe(df_es, use_container_width=True, hide_index=True)
             else:
                 st.info("Aún no hay entidades citadas.")
         except Exception as exc:  # noqa: BLE001

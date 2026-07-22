@@ -210,6 +210,12 @@ code, pre, .mono { font-family: 'JetBrains Mono', monospace !important; }
   border-color: var(--sbs-blue) !important;
   box-shadow: 0 0 0 3px rgba(0, 61, 122, 0.08) !important;
 }
+/* Altura natural del textarea del chat (una línea que crece al escribir) */
+[data-testid="stChatInput"] textarea {
+  min-height: 40px !important;
+  padding-top: 9px !important;
+  padding-bottom: 9px !important;
+}
 
 /* ── Dataframes ─────────────────────────────────────────────────────── */
 [data-testid="stDataFrame"] {
@@ -787,7 +793,7 @@ div[data-testid="stChatInput"] {
   background: white !important;
   border-top: 2px solid var(--sbs-red) !important;
   box-shadow: 0 -4px 20px rgba(15,23,42,0.10) !important;
-  padding: 16px 3rem 14px !important;
+  padding: 10px 3rem 12px !important;
   z-index: 9999 !important;
   margin: 0 !important;
 }
