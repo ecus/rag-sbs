@@ -40,7 +40,12 @@ code, pre, .mono { font-family: 'JetBrains Mono', monospace !important; }
   max-width: 100% !important;
 }
 [data-testid="stMain"] { padding: 0 !important; }
-[data-testid="stMain"] > div:first-child { padding-top: 0 !important; margin-top: 0 !important; }
+section[data-testid="stMain"] > div,
+section[data-testid="stMain"] .block-container,
+section[data-testid="stMain"] [data-testid="stMainBlockContainer"] {
+  padding-top: 0 !important; margin-top: 0 !important;
+}
+.sbs-header { margin-top: 0 !important; }
 .block-container {
   padding-top: 0 !important;
   padding-left: 0 !important;
@@ -163,18 +168,19 @@ code, pre, .mono { font-family: 'JetBrains Mono', monospace !important; }
 .sidebar-user span { color: #8aa0bf !important; font-size: 10px; }
 /* Botones del sidebar */
 [data-testid="stSidebar"] .stButton > button {
-  background: rgba(255,255,255,.06) !important;
-  border: 1px solid rgba(255,255,255,.12) !important;
-  color: #dbe4f0 !important;
+  background: rgba(255,255,255,.08) !important;
+  border: 1px solid rgba(255,255,255,.16) !important;
+  color: #eaf0f8 !important;
   font-size: 12.5px !important;
   text-align: left !important;
   justify-content: flex-start !important;
 }
 [data-testid="stSidebar"] .stButton > button:hover {
-  background: rgba(255,255,255,.12) !important;
-  border-color: rgba(255,255,255,.22) !important;
+  background: rgba(255,255,255,.16) !important;
+  border-color: rgba(255,255,255,.3) !important;
   color: #fff !important;
 }
+[data-testid="stSidebar"] .stButton > button p { color: inherit !important; }
 [data-testid="stSidebar"] .stButton > button[kind="primary"] {
   background: #2563eb !important; border-color: #2563eb !important;
   color: #fff !important; text-align: center !important;

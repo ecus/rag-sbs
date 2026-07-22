@@ -969,12 +969,15 @@ with tab_chat:
             "Cronograma de un crédito de S/ 1,000 al 38% a 12 meses",
             "¿Qué se declara en el Reporte Crediticio de Deudores?",
         ]
-        _ce1, _ce2 = st.columns(2)
-        for _i, _ej in enumerate(_ejemplos):
-            _col = _ce1 if _i % 2 == 0 else _ce2
-            if _col.button(_ej, key=f"ej_{_i}", use_container_width=True):
-                st.session_state.consulta_pendiente = _ej
-                st.rerun()
+        # Contener los ejemplos a un ancho centrado (como el mockup), no full-width.
+        _pad_l, _mid, _pad_r = st.columns([1, 2, 1])
+        with _mid:
+            _ce1, _ce2 = st.columns(2)
+            for _i, _ej in enumerate(_ejemplos):
+                _col = _ce1 if _i % 2 == 0 else _ce2
+                if _col.button(_ej, key=f"ej_{_i}", use_container_width=True):
+                    st.session_state.consulta_pendiente = _ej
+                    st.rerun()
 
     # Render history
     for idx, mensaje in enumerate(st.session_state.historial_chat):
