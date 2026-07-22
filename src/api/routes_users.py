@@ -14,11 +14,18 @@ from fastapi import APIRouter, Depends, HTTPException
 from psycopg_pool import AsyncConnectionPool
 from pydantic import BaseModel, Field
 
+import os
+
 from src.core.deps import get_pool
 from src.core.security import limitar_auth, limitar_encuesta, verificar_admin
+from src.storage import feedback as feedback_store
 from src.storage import users as users_store
 
 router = APIRouter(prefix="/v1/users", tags=["users"])
+
+
+def _admin_email() -> str:
+    return os.environ.get("ADMIN_EMAIL", "eurrutia489@gmail.com").strip().lower()
 
 
 # -----------------------------------------------------------------------------
@@ -213,6 +220,9 @@ async def borrar_mis_datos(
     Las encuestas quedan anonimizadas (sin email ni user_id) para
     conservar las métricas agregadas de calidad.
     """
+    # La cuenta de administrador no se puede eliminar
+    if (payload.email or "").strip().lower() == _admin_email():
+        raise HTTPException(403, "La cuenta de administrador no puede eliminarse.")
     ok, error = await users_store.borrar_usuario(pool, payload.email, payload.pin)
     if not ok:
         raise HTTPException(401, "Email o PIN incorrectos.")
@@ -282,4 +292,72 @@ async def set_limite(
     ok = await users_store.set_limite_diario(pool, payload.email, payload.limite)
     if not ok:
         raise HTTPException(404, "Usuario no encontrado.")
+    return {"ok": True}
+
+
+# -----------------------------------------------------------------------------
+# Feedback por respuesta (like/dislike + comentario)
+# -----------------------------------------------------------------------------
+
+class VotoPayload(BaseModel):
+    email: str | None = None
+    conversation_id: str | None = None
+    question: str | None = None
+    answer: str | None = None
+    vote: str  # 'up' | 'down'
+    comment: str | None = Field(None, max_length=2000)
+
+
+@router.post("/feedback")
+async def enviar_voto(
+    payload: VotoPayload,
+    pool: AsyncConnectionPool = Depends(get_pool),
+) -> dict:
+    """Registra un like/dislike de una respuesta (con comentario opcional)."""
+    fid = await feedback_store.guardar_voto(
+        pool,
+        email=payload.email,
+        conversation_id=payload.conversation_id,
+        question=payload.question,
+        answer=payload.answer,
+        vote=payload.vote,
+        comment=payload.comment,
+    )
+    if not fid:
+        raise HTTPException(400, "No se pudo registrar el voto.")
+    return {"ok": True, "id": fid}
+
+
+@router.get("/feedback/summary", dependencies=[Depends(verificar_admin)])
+async def feedback_summary(
+    limit: int = 100,
+    pool: AsyncConnectionPool = Depends(get_pool),
+) -> dict:
+    """Agregado de likes/dislikes + comentarios de dislikes (solo admin)."""
+    return await feedback_store.resumen_feedback(pool, limit=limit)
+
+
+# -----------------------------------------------------------------------------
+# Límites globales (X-Admin-Key)
+# -----------------------------------------------------------------------------
+
+class LimitesGlobalesPayload(BaseModel):
+    global_daily_limit: int = Field(..., ge=0, le=100000)
+    global_hourly_limit: int = Field(..., ge=0, le=100000)
+
+
+@router.get("/settings", dependencies=[Depends(verificar_admin)])
+async def get_settings(pool: AsyncConnectionPool = Depends(get_pool)) -> dict:
+    """Devuelve los settings globales (límites)."""
+    return await feedback_store.get_settings(pool)
+
+
+@router.post("/settings/limits", dependencies=[Depends(verificar_admin)])
+async def set_limites_globales(
+    payload: LimitesGlobalesPayload,
+    pool: AsyncConnectionPool = Depends(get_pool),
+) -> dict:
+    """Ajusta los límites globales por día y por hora (0 = sin límite)."""
+    await feedback_store.set_setting(pool, "global_daily_limit", str(payload.global_daily_limit))
+    await feedback_store.set_setting(pool, "global_hourly_limit", str(payload.global_hourly_limit))
     return {"ok": True}

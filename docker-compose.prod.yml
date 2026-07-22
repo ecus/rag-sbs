@@ -102,6 +102,8 @@ services:
       API_PUBLIC_PORT: ${API_PUBLIC_PORT:-8000}
       LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
       GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+      ADMIN_API_KEY: ${ADMIN_API_KEY}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-eurrutia489@gmail.com}
       PYTHONPATH: /app
     command:
       - streamlit

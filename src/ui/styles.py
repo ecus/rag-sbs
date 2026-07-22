@@ -765,9 +765,18 @@ div[data-testid="stChatMessage"]:has([data-testid*="vatarAssistant"]) > div:last
   box-shadow: 0 1px 3px rgba(15,23,42,0.06) !important;
 }
 
-/* ─── Input FIJO al pie de pantalla (estilo ChatGPT) ─── */
-/* Streamlit por defecto NO fija el chat_input cuando está dentro de tabs.
-   Lo forzamos con position fixed agresivamente. */
+/* ─── Barra de input FIJA al pie (estilo ChatGPT) ─── */
+/* Streamlit moderno envuelve el chat_input en [data-testid="stBottom"], que ya
+   queda fijo abajo. Lo estilamos como barra blanca con acento rojo superior y
+   sombra sutil. Además forzamos el fixed sobre stChatInput como fallback para
+   versiones donde stBottom no fija (evita las "barras sueltas" a mitad de página). */
+[data-testid="stBottom"],
+[data-testid="stBottomBlockContainer"] {
+  background: white !important;
+  border-top: 2px solid var(--sbs-red) !important;
+  box-shadow: 0 -4px 20px rgba(15,23,42,0.10) !important;
+}
+
 [data-testid="stChatInput"],
 div[data-testid="stChatInput"] {
   position: fixed !important;
@@ -775,12 +784,10 @@ div[data-testid="stChatInput"] {
   left: 21rem !important;   /* ancho del sidebar de Streamlit */
   right: 0 !important;
   width: auto !important;
-  background: linear-gradient(180deg,
-    rgba(255,255,255,0) 0%,
-    rgba(255,255,255,0.95) 25%,
-    white 60%,
-    white 100%) !important;
-  padding: 20px 3rem 16px !important;
+  background: white !important;
+  border-top: 2px solid var(--sbs-red) !important;
+  box-shadow: 0 -4px 20px rgba(15,23,42,0.10) !important;
+  padding: 16px 3rem 14px !important;
   z-index: 9999 !important;
   margin: 0 !important;
 }
@@ -817,14 +824,15 @@ section.main > div.block-container,
 [data-testid="stChatInput"] > div,
 div[data-testid="stChatInput"] > div {
   border-radius: 28px !important;
-  border: 1.5px solid #cbd5e1 !important;
-  box-shadow: 0 4px 16px rgba(15,23,42,0.10) !important;
-  background: white !important;
+  border: 1.5px solid var(--sbs-blue) !important;
+  box-shadow: 0 2px 10px rgba(0,61,122,0.12) !important;
+  background: #fbfcfe !important;
   transition: border-color 0.2s, box-shadow 0.2s !important;
 }
 [data-testid="stChatInput"] > div:focus-within {
-  border-color: #003d7a !important;
-  box-shadow: 0 4px 20px rgba(0,61,122,0.18) !important;
+  border-color: var(--sbs-blue) !important;
+  box-shadow: 0 0 0 4px rgba(0,61,122,0.12) !important;
+  background: white !important;
 }
 
 [data-testid="stChatInputSubmitButton"] {

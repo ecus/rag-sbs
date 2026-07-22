@@ -103,6 +103,54 @@ class APIClient:
         r.raise_for_status()
         return r.json()
 
+    # ------ Feedback (like/dislike) ------------------------------------------
+
+    def enviar_voto(self, *, email, conversation_id, question, answer, vote,
+                    comment=None) -> bool:
+        try:
+            r = self._client.post(
+                f"{self.base_url}/v1/users/feedback",
+                json={
+                    "email": email, "conversation_id": conversation_id,
+                    "question": question, "answer": answer,
+                    "vote": vote, "comment": comment,
+                },
+                timeout=8,
+            )
+            return r.status_code == 200
+        except Exception:  # noqa: BLE001
+            return False
+
+    def feedback_summary(self, limit: int = 100) -> dict:
+        try:
+            r = self._client.get(
+                f"{self.base_url}/v1/users/feedback/summary",
+                params={"limit": limit}, timeout=8,
+            )
+            r.raise_for_status()
+            return r.json()
+        except Exception:  # noqa: BLE001
+            return {}
+
+    def get_settings(self) -> dict:
+        try:
+            r = self._client.get(f"{self.base_url}/v1/users/settings", timeout=8)
+            r.raise_for_status()
+            return r.json()
+        except Exception:  # noqa: BLE001
+            return {}
+
+    def set_limites_globales(self, diario: int, por_hora: int) -> bool:
+        try:
+            r = self._client.post(
+                f"{self.base_url}/v1/users/settings/limits",
+                json={"global_daily_limit": diario, "global_hourly_limit": por_hora},
+                timeout=8,
+            )
+            return r.status_code == 200
+        except Exception:  # noqa: BLE001
+            return False
+
     # ------ Administración de acceso -----------------------------------------
 
     def usuarios_pendientes(self) -> list[dict]:

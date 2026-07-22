@@ -88,11 +88,26 @@ def obtener_cliente() -> APIClient:
 
 api = obtener_cliente()
 
-# El cliente cacheado es COMPARTIDO entre sesiones — nunca setearle la admin
-# key. Si esta sesión está en modo admin, usar un cliente propio con el header.
-if st.session_state.get("admin_key"):
+# --- Administración por cuenta ---
+# El panel admin es exclusivo de ADMIN_EMAIL. La clave admin vive en el
+# servidor (ADMIN_API_KEY en el env del contenedor UI); cuando el usuario
+# logueado ES el admin, el cliente la usa automáticamente. Así el admin no
+# necesita conocer ninguna clave: alcanza con estar logueado con su cuenta.
+import os as _os
+
+ADMIN_EMAIL = _os.environ.get("ADMIN_EMAIL", "eurrutia489@gmail.com").strip().lower()
+_ADMIN_KEY_ENV = _os.environ.get("ADMIN_API_KEY", "").strip()
+
+
+def es_admin() -> bool:
+    u = st.session_state.get("user") or {}
+    return (u.get("email") or "").strip().lower() == ADMIN_EMAIL
+
+
+# Si el usuario logueado es el admin, usar un cliente propio con la admin key
+if es_admin() and _ADMIN_KEY_ENV:
     api = APIClient()
-    api.set_admin_key(st.session_state.admin_key)
+    api.set_admin_key(_ADMIN_KEY_ENV)
 
 
 # =========================================================================
@@ -184,6 +199,66 @@ def _historial_para_backend(
         if contenido.strip():
             salida.append({"role": rol, "content": contenido})
     return salida
+
+
+def _pregunta_previa(idx: int) -> str:
+    """Devuelve el texto del turno de usuario que precede a la respuesta idx."""
+    hist = st.session_state.get("historial_chat", [])
+    for j in range(idx - 1, -1, -1):
+        if hist[j].get("rol") == "user":
+            return hist[j].get("texto", "")
+    return ""
+
+
+def _render_feedback_botones(api: APIClient, idx: int, mensaje: dict) -> None:
+    """👍 / 👎 bajo una respuesta; en 👎 abre caja de comentario."""
+    votos = st.session_state.setdefault("votos_feedback", {})
+    clave = f"{st.session_state.get('conversation_id','')}:{idx}"
+    ya = votos.get(clave)
+
+    if ya == "up":
+        st.caption("👍 Gracias por tu feedback")
+        return
+    if ya == "down_done":
+        st.caption("👎 Gracias, tomamos nota para mejorar")
+        return
+
+    pregunta = _pregunta_previa(idx)
+    respuesta = mensaje.get("texto", "")
+
+    if ya == "down_pending":
+        # Mostrar caja de comentario
+        with st.form(f"fbform_{clave}", clear_on_submit=True):
+            st.caption("¿Qué estuvo mal o qué esperabas? (nos ayuda a mejorar)")
+            comentario = st.text_area("Comentario", key=f"fbcom_{clave}",
+                                      label_visibility="collapsed", height=70)
+            c1, c2 = st.columns([1, 1])
+            enviar = c1.form_submit_button("Enviar", type="primary",
+                                           use_container_width=True)
+            saltar = c2.form_submit_button("Omitir", use_container_width=True)
+        if enviar or saltar:
+            api.enviar_voto(
+                email=(st.session_state.get("user") or {}).get("email"),
+                conversation_id=st.session_state.get("conversation_id"),
+                question=pregunta, answer=respuesta, vote="down",
+                comment=(comentario if enviar else None),
+            )
+            votos[clave] = "down_done"
+            st.rerun()
+        return
+
+    col1, col2, _ = st.columns([1, 1, 8])
+    if col1.button("👍", key=f"up_{clave}", help="Respuesta útil"):
+        api.enviar_voto(
+            email=(st.session_state.get("user") or {}).get("email"),
+            conversation_id=st.session_state.get("conversation_id"),
+            question=pregunta, answer=respuesta, vote="up",
+        )
+        votos[clave] = "up"
+        st.rerun()
+    if col2.button("👎", key=f"down_{clave}", help="Respuesta a mejorar"):
+        votos[clave] = "down_pending"
+        st.rerun()
 
 
 def _asegurar_conversacion(api: APIClient, user: dict) -> str | None:
@@ -603,41 +678,25 @@ with st.sidebar:
             pass
 
         st.markdown("---")
-        # Modo técnico requiere la clave de administración
-        if st.session_state.get("pedir_admin_key"):
-            admin_key_in = st.text_input(
-                "Clave de administración",
-                type="password",
-                key="admin_key_input",
-            )
-            col_ak1, col_ak2 = st.columns(2)
-            if col_ak1.button("Entrar", use_container_width=True, type="primary",
-                              key="admin_key_go"):
-                if admin_key_in and api.verificar_admin_key(admin_key_in.strip()):
-                    st.session_state.admin_key = admin_key_in.strip()
-                    st.session_state.modo_tecnico = True
-                    st.session_state.pedir_admin_key = False
-                    st.rerun()
-                else:
-                    st.error("Clave inválida.")
-            if col_ak2.button("Cancelar", use_container_width=True,
-                              key="admin_key_cancel"):
-                st.session_state.pedir_admin_key = False
+        # El panel de administración es EXCLUSIVO de la cuenta admin.
+        if es_admin():
+            if st.button("🔧 Panel de administración", use_container_width=True,
+                         help="Dashboard exclusivo de tu cuenta"):
+                st.session_state.modo_tecnico = True
                 st.rerun()
-        elif st.button("🔧 Modo técnico", use_container_width=True,
-                       help="Dashboard de administración (requiere clave)"):
-            st.session_state.pedir_admin_key = True
-            st.rerun()
         st.caption(
             '<div style="font-size:10px;color:#94a3b8;text-align:center;'
             'margin-top:12px;">v0.3 · Portafolio personal</div>',
             unsafe_allow_html=True,
         )
     else:
-        # ----- MODO TÉCNICO: dashboard admin -----
+        # ----- MODO TÉCNICO: dashboard admin (solo cuenta admin) -----
+        if not es_admin():
+            # Salvaguarda: si no es admin, forzar salida del modo técnico
+            st.session_state.modo_tecnico = False
+            st.rerun()
         if st.button("← Volver a modo usuario", use_container_width=True):
             st.session_state.modo_tecnico = False
-            st.session_state.admin_key = None  # soltar credencial al salir
             st.rerun()
 
         st.markdown("### 🔍 Estado del sistema")
@@ -912,7 +971,7 @@ with tab_chat:
         st.session_state.consulta_pendiente = None  # query enriquecido a procesar
 
     # Render history
-    for mensaje in st.session_state.historial_chat:
+    for idx, mensaje in enumerate(st.session_state.historial_chat):
         with st.chat_message(mensaje["rol"]):
             if mensaje["rol"] == "assistant":
                 st.markdown(
@@ -929,6 +988,9 @@ with tab_chat:
                     for i, f in enumerate(md["sources"], 1)
                 )
                 st.markdown(fuentes_html, unsafe_allow_html=True)
+            # Botones like/dislike bajo cada respuesta del asistente
+            if mensaje["rol"] == "assistant":
+                _render_feedback_botones(api, idx, mensaje)
 
     # Si el agente está esperando respuestas a clarificaciones, las pintamos
     if st.session_state.plan_pendiente:
@@ -1534,7 +1596,7 @@ with tab_runs:
                         st.toast(f"Rechazado: {p['email']}", icon="🚫")
                         st.rerun()
 
-    with st.expander("🎚️ Ajustar límite de consultas por día de un usuario"):
+    with st.expander("🎚️ Límite por usuario (consultas/día)"):
         st.caption("Default: 20 consultas/día. Poné 0 para dejarlo sin límite.")
         with st.form("form_limite"):
             lim_email = st.text_input("Email del usuario", key="lim_email")
@@ -1545,6 +1607,55 @@ with tab_runs:
                     st.success(f"Límite de {lim_email.strip()} → {int(lim_valor)}/día")
                 else:
                     st.error("No se pudo actualizar (¿email correcto?).")
+
+    with st.expander("🌐 Límites GLOBALES (toda la mesa)"):
+        st.caption(
+            "Topes para el total de consultas de todos los usuarios juntos. "
+            "Protegen tu cuota de Gemini. 0 = sin límite."
+        )
+        _s = api.get_settings()
+        with st.form("form_limites_globales"):
+            gc1, gc2 = st.columns(2)
+            g_dia = gc1.number_input("Máx por día (global)", min_value=0, max_value=100000,
+                                     value=int(_s.get("global_daily_limit", "0") or 0),
+                                     step=10, key="g_dia")
+            g_hora = gc2.number_input("Máx por hora (global)", min_value=0, max_value=100000,
+                                      value=int(_s.get("global_hourly_limit", "0") or 0),
+                                      step=5, key="g_hora")
+            if st.form_submit_button("Guardar límites globales", type="primary"):
+                if api.set_limites_globales(int(g_dia), int(g_hora)):
+                    st.success(f"Global: {int(g_dia)}/día · {int(g_hora)}/hora")
+                else:
+                    st.error("No se pudo guardar.")
+
+    st.markdown("---")
+
+    # ----------------------------------------------------------------------
+    # Feedback de respuestas (like/dislike + comentarios)
+    # ----------------------------------------------------------------------
+    st.markdown("### 👍👎 Feedback de respuestas")
+    fb = api.feedback_summary(limit=50)
+    if fb:
+        fc1, fc2, fc3 = st.columns(3)
+        fc1.metric("👍 Likes", fb.get("likes", 0))
+        fc2.metric("👎 Dislikes", fb.get("dislikes", 0))
+        total = fb.get("likes", 0) + fb.get("dislikes", 0)
+        pct = round(100 * fb.get("likes", 0) / total) if total else 0
+        fc3.metric("% satisfacción", f"{pct}%")
+        detalle = fb.get("dislikes_detalle", [])
+        if detalle:
+            st.markdown("**Dislikes para revisar:**")
+            for d in detalle:
+                with st.expander(f"👎 {(d.get('question') or 's/pregunta')[:70]}"):
+                    st.markdown(f"**Usuario:** {d.get('email') or '—'}")
+                    if d.get("comment"):
+                        st.markdown(f"**Comentario:** {d['comment']}")
+                    st.caption(f"Pregunta: {d.get('question') or '—'}")
+                    st.caption(f"Respuesta (extracto): {d.get('answer') or '—'}")
+        else:
+            st.info("No hay dislikes registrados. 🎉")
+    else:
+        st.info("Aún no hay feedback.")
 
     st.markdown("---")
 

@@ -364,19 +364,49 @@ def _confianza_final(fragmentos: list, respuesta_texto: str) -> str:
 
 
 async def _verificar_acceso(pool, alias: str | None) -> None:
-    """Bloquea la consulta si el usuario no está aprobado o superó su límite diario.
+    """Bloquea la consulta por aprobación y por límites (usuario y globales).
 
-    Si el alias no corresponde a un usuario registrado (legacy/test), no bloquea.
+    Orden: estado del usuario → límite diario del usuario → límite global por
+    hora → límite global por día. Si el alias no está registrado (legacy/test),
+    solo se aplican los límites globales.
     """
+    from src.storage import feedback as _fb
+
+    # Límites GLOBALES (aplican a todos, incluso alias no registrados)
+    try:
+        settings = await _fb.get_settings(pool)
+        g_dia = int(settings.get("global_daily_limit", "0") or 0)
+        g_hora = int(settings.get("global_hourly_limit", "0") or 0)
+        if g_dia > 0 or g_hora > 0:
+            hoy, ult_hora = await _fb.conteos_globales(pool)
+            if g_hora > 0 and ult_hora >= g_hora:
+                raise HTTPException(
+                    429,
+                    "La mesa alcanzó el máximo de consultas por hora. "
+                    "Probá de nuevo en un rato.",
+                )
+            if g_dia > 0 and hoy >= g_dia:
+                raise HTTPException(
+                    429,
+                    "La mesa alcanzó el máximo de consultas por hoy. "
+                    "Volvé a intentar mañana.",
+                )
+    except HTTPException:
+        raise
+    except Exception:  # noqa: BLE001
+        pass  # falla suave en límites globales
+
     if not alias:
         return
     try:
         from src.storage import users as _users
         estado = await _users.estado_acceso(pool, alias.strip())
+    except HTTPException:
+        raise
     except Exception:  # noqa: BLE001
         return  # falla suave: no bloquear por error de infraestructura
     if not estado:
-        return  # alias no registrado → legacy/test, se permite
+        return  # alias no registrado → legacy/test
     if estado["status"] != "approved":
         raise HTTPException(
             403,
