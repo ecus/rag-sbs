@@ -145,6 +145,131 @@ async def resumen_por_usuario(
     ]
 
 
+async def metricas_dashboard(pool: AsyncConnectionPool, dias: int = 30) -> dict:
+    """Métricas para el dashboard admin (RF-015): consultas/día, temas top,
+    documentos más referenciados, distribución de confianza."""
+    async with pool.connection() as conn:
+        async with conn.cursor() as cur:
+            # Consultas por día
+            await cur.execute(
+                """
+                SELECT date_trunc('day', created_at)::date AS dia, COUNT(*)
+                FROM query_log
+                WHERE created_at >= NOW() - (%s || ' days')::interval
+                GROUP BY dia ORDER BY dia
+                """,
+                (dias,),
+            )
+            por_dia = [
+                {"dia": r[0].isoformat(), "consultas": int(r[1])}
+                for r in await cur.fetchall()
+            ]
+
+            # Documentos más referenciados (unnest de sources_summary)
+            await cur.execute(
+                """
+                SELECT elem->>'title' AS titulo, COUNT(*) AS refs
+                FROM query_log q,
+                     jsonb_array_elements(q.sources_summary) elem
+                WHERE q.created_at >= NOW() - (%s || ' days')::interval
+                  AND elem->>'title' IS NOT NULL AND elem->>'title' <> ''
+                GROUP BY titulo ORDER BY refs DESC LIMIT 15
+                """,
+                (dias,),
+            )
+            top_docs = [
+                {"documento": r[0], "referencias": int(r[1])}
+                for r in await cur.fetchall()
+            ]
+
+            # Temas / consultas más frecuentes
+            await cur.execute(
+                """
+                SELECT LOWER(TRIM(query_text)) AS q, COUNT(*) AS n
+                FROM query_log
+                WHERE created_at >= NOW() - (%s || ' days')::interval
+                  AND query_text IS NOT NULL AND LENGTH(TRIM(query_text)) > 3
+                GROUP BY q ORDER BY n DESC, MAX(created_at) DESC LIMIT 15
+                """,
+                (dias,),
+            )
+            top_consultas = [
+                {"consulta": r[0][:100], "veces": int(r[1])}
+                for r in await cur.fetchall()
+            ]
+
+            # Distribución de confianza
+            await cur.execute(
+                """
+                SELECT COALESCE(confidence, 's/d') AS c, COUNT(*)
+                FROM query_log
+                WHERE created_at >= NOW() - (%s || ' days')::interval
+                GROUP BY c ORDER BY COUNT(*) DESC
+                """,
+                (dias,),
+            )
+            confianza = [
+                {"confianza": r[0], "n": int(r[1])} for r in await cur.fetchall()
+            ]
+
+            # Totales
+            await cur.execute(
+                """
+                SELECT COUNT(*), COUNT(DISTINCT LOWER(alias)),
+                       ROUND(AVG(latency_ms))
+                FROM query_log
+                WHERE created_at >= NOW() - (%s || ' days')::interval
+                """,
+                (dias,),
+            )
+            tot = await cur.fetchone()
+
+    return {
+        "consultas_por_dia": por_dia,
+        "top_documentos": top_docs,
+        "top_consultas": top_consultas,
+        "distribucion_confianza": confianza,
+        "total_consultas": int(tot[0] or 0),
+        "usuarios_activos": int(tot[1] or 0),
+        "latencia_avg_ms": int(tot[2] or 0),
+        "dias": dias,
+    }
+
+
+async def export_query_log(
+    pool: AsyncConnectionPool, desde: str, hasta: str, limit: int = 50000
+) -> list[dict]:
+    """Exporta query_log en un rango de fechas (RNF-021). Formato tabular."""
+    async with pool.connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT created_at, alias, query_text, confidence, n_sources,
+                       latency_ms, tokens_in, tokens_out, client_ip
+                FROM query_log
+                WHERE created_at >= %s::date AND created_at < (%s::date + INTERVAL '1 day')
+                ORDER BY created_at ASC
+                LIMIT %s
+                """,
+                (desde, hasta, limit),
+            )
+            filas = await cur.fetchall()
+    return [
+        {
+            "fecha": r[0].isoformat() if r[0] else "",
+            "usuario": r[1] or "",
+            "consulta": (r[2] or "").replace("\n", " "),
+            "confianza": r[3] or "",
+            "n_fuentes": int(r[4] or 0),
+            "latencia_ms": int(r[5] or 0),
+            "tokens_in": int(r[6] or 0),
+            "tokens_out": int(r[7] or 0),
+            "client_ip": r[8] or "",
+        }
+        for r in filas
+    ]
+
+
 async def queries_de_usuario(
     pool: AsyncConnectionPool, alias: str, limit: int = 50
 ) -> list[dict]:

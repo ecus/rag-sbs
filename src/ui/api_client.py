@@ -103,6 +103,30 @@ class APIClient:
         r.raise_for_status()
         return r.json()
 
+    # ------ Dashboard / export (admin) ---------------------------------------
+
+    def dashboard_metricas(self, dias: int = 30) -> dict:
+        try:
+            r = self._client.get(
+                f"{self.base_url}/v1/analytics/dashboard",
+                params={"dias": dias}, timeout=15,
+            )
+            r.raise_for_status()
+            return r.json()
+        except Exception:  # noqa: BLE001
+            return {}
+
+    def export_logs_csv(self, desde: str, hasta: str) -> bytes | None:
+        try:
+            r = self._client.get(
+                f"{self.base_url}/v1/analytics/export",
+                params={"desde": desde, "hasta": hasta}, timeout=30,
+            )
+            r.raise_for_status()
+            return r.content
+        except Exception:  # noqa: BLE001
+            return None
+
     # ------ Feedback (like/dislike) ------------------------------------------
 
     def enviar_voto(self, *, email, conversation_id, question, answer, vote,

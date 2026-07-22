@@ -3,9 +3,12 @@
 uvicorn src.main:app --host 0.0.0.0 --port 8000
 """
 
+import logging
 import os
+import time
+from uuid import uuid4
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from src import __version__
@@ -21,7 +24,11 @@ from src.api import (
     routes_users,
 )
 from src.core.deps import lifespan
+from src.core.logging_setup import configurar_logging, request_id_var
 from src.core.security import verificar_admin
+
+configurar_logging()
+_acceso_log = logging.getLogger("app.access")
 
 
 def create_app() -> FastAPI:
@@ -55,6 +62,35 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # Correlation ID + access log estructurado JSON por request (RNF-016)
+    @app.middleware("http")
+    async def correlation_middleware(request: Request, call_next):
+        rid = request.headers.get("x-request-id") or uuid4().hex[:16]
+        token = request_id_var.set(rid)
+        inicio = time.perf_counter()
+        status = 500
+        try:
+            response = await call_next(request)
+            status = response.status_code
+            response.headers["X-Request-ID"] = rid
+            return response
+        finally:
+            latencia_ms = round((time.perf_counter() - inicio) * 1000, 1)
+            _acceso_log.info(
+                "request",
+                extra={
+                    "method": request.method,
+                    "path": request.url.path,
+                    "status_code": status,
+                    "latency_ms": latencia_ms,
+                    "client_ip": (
+                        request.headers.get("x-real-ip")
+                        or (request.client.host if request.client else "")
+                    ),
+                },
+            )
+            request_id_var.reset(token)
 
     # Routes públicas (rate-limited donde corresponde)
     app.include_router(routes_health.router)

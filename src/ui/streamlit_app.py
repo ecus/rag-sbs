@@ -1566,6 +1566,72 @@ with tab_stats:
 
 with tab_runs:
     # ----------------------------------------------------------------------
+    # 📈 Dashboard de monitoreo (RF-015)
+    # ----------------------------------------------------------------------
+    st.markdown("### 📈 Monitoreo de uso")
+    _dias = st.selectbox("Período", [7, 30, 90], index=1, key="dash_dias",
+                         format_func=lambda d: f"Últimos {d} días")
+    _m = api.dashboard_metricas(dias=_dias)
+    if _m:
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Consultas", _m.get("total_consultas", 0))
+        m2.metric("Usuarios activos", _m.get("usuarios_activos", 0))
+        m3.metric("Latencia media", f"{_m.get('latencia_avg_ms', 0)} ms")
+
+        # Consultas por día
+        pd_data = _m.get("consultas_por_dia", [])
+        if pd_data:
+            st.caption("Consultas por día")
+            df_dia = pd.DataFrame(pd_data)
+            st.bar_chart(df_dia.set_index("dia")["consultas"], height=180)
+
+        cda, cdb = st.columns(2)
+        with cda:
+            st.caption("📄 Documentos más referenciados")
+            td = _m.get("top_documentos", [])
+            if td:
+                st.dataframe(pd.DataFrame(td), hide_index=True,
+                             use_container_width=True, height=280)
+            else:
+                st.info("Sin datos aún.")
+        with cdb:
+            st.caption("🔎 Consultas más frecuentes")
+            tc = _m.get("top_consultas", [])
+            if tc:
+                st.dataframe(pd.DataFrame(tc), hide_index=True,
+                             use_container_width=True, height=280)
+            else:
+                st.info("Sin datos aún.")
+
+        # Distribución de confianza
+        dc = _m.get("distribucion_confianza", [])
+        if dc:
+            st.caption("Distribución de confianza")
+            st.dataframe(pd.DataFrame(dc), hide_index=True, use_container_width=True)
+    else:
+        st.info("Aún no hay datos de consultas.")
+
+    # Export de logs por período (RNF-021)
+    with st.expander("📥 Exportar consultas por período (CSV)"):
+        ce1, ce2 = st.columns(2)
+        _hoy = datetime.now().date()
+        f_desde = ce1.date_input("Desde", value=_hoy.replace(day=1), key="exp_desde")
+        f_hasta = ce2.date_input("Hasta", value=_hoy, key="exp_hasta")
+        _csv = None
+        if st.button("Generar CSV", type="primary", key="exp_go"):
+            _csv = api.export_logs_csv(str(f_desde), str(f_hasta))
+            if _csv:
+                st.download_button(
+                    "⬇️ Descargar CSV", data=_csv,
+                    file_name=f"consultas_{f_desde}_a_{f_hasta}.csv",
+                    mime="text/csv", key="exp_dl",
+                )
+            else:
+                st.error("No se pudo generar el export.")
+
+    st.markdown("---")
+
+    # ----------------------------------------------------------------------
     # Solicitudes de acceso pendientes
     # ----------------------------------------------------------------------
     st.markdown("### 🔓 Solicitudes de acceso")
