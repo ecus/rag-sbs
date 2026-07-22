@@ -133,15 +133,35 @@ def render_auth(api_base: str) -> None:
     if esta_logueado():
         return
 
-    # Centrar y acotar el ancho SOLO en la pantalla de acceso (render_auth
-    # llama a st.stop(), así que este CSS no afecta al chat).
+    # Diseño de la pantalla de acceso: una sola tarjeta centrada, sobria.
+    # (render_auth llama a st.stop() si no hay sesión, así que este CSS no
+    # afecta al chat.)
     st.markdown(
         """
         <style>
+        [data-testid="stAppViewContainer"] { background: #eef2f6; }
         [data-testid="stMainBlockContainer"], .block-container {
-            max-width: 560px !important;
-            margin: 0 auto !important;
-            padding-top: 1.5rem !important;
+            max-width: 430px !important;
+            margin: 4vh auto 2rem !important;
+            padding: 2rem 2rem 1.4rem !important;
+            background: #ffffff !important;
+            border: 1px solid #e5e9f0 !important;
+            border-radius: 16px !important;
+            box-shadow: 0 10px 34px rgba(15,23,42,0.08) !important;
+        }
+        [data-testid="stForm"] {
+            border: none !important; padding: 0 !important; box-shadow: none !important;
+        }
+        [data-baseweb="tab-list"] {
+            justify-content: center; gap: 8px;
+            border-bottom: 1px solid #eef1f5 !important; margin-bottom: 4px;
+        }
+        [data-baseweb="tab"] { font-size: 14px; }
+        [data-testid="stExpander"] details {
+            border: none !important; box-shadow: none !important; background: transparent !important;
+        }
+        [data-testid="stExpander"] summary {
+            font-size: 12.5px !important; color: #64748b !important; padding: 6px 0 !important;
         }
         </style>
         """,
@@ -149,19 +169,21 @@ def render_auth(api_base: str) -> None:
     )
 
     st.markdown(
-        '<div style="background:linear-gradient(135deg,#eff6ff,#dbeafe);'
-        'border:1px solid #93c5fd;border-radius:12px;padding:18px 20px;'
-        'margin:0 0 18px;text-align:center;">'
-        '<div style="font-size:22px;font-weight:600;color:#1e3a8a;'
-        'margin-bottom:6px;">👤 Acceso a la Mesa Experta</div>'
-        '<div style="color:#1e40af;font-size:13px;line-height:1.5;">'
-        'Ingresá con tu email y PIN, o registrate para solicitar acceso. '
-        'Un administrador aprobará tu solicitud.'
-        '</div></div>',
+        '<div style="text-align:center;margin:0 0 1.4rem;">'
+        '<div style="display:inline-flex;align-items:center;justify-content:center;'
+        'width:52px;height:52px;background:#0d2b5c;color:#fff;border-radius:12px;'
+        'font-weight:700;font-size:16px;letter-spacing:1px;margin-bottom:12px;">SBS</div>'
+        '<div style="font-size:20px;font-weight:600;color:#0f172a;line-height:1.2;">'
+        'Mesa Experta Regulatoria</div>'
+        '<div style="font-size:12.5px;color:#64748b;margin-top:4px;">'
+        'Consultas sobre normativa financiera peruana</div>'
+        '<div style="font-size:11px;color:#94a3b8;margin-top:2px;">'
+        'Herramienta independiente, no oficial</div>'
+        '</div>',
         unsafe_allow_html=True,
     )
 
-    tab_login, tab_reg = st.tabs(["🔑 Iniciar sesión", "🆕 Registrarse"])
+    tab_login, tab_reg = st.tabs(["Iniciar sesión", "Crear cuenta"])
 
     # ---- LOGIN ----
     with tab_login:
@@ -218,7 +240,7 @@ def render_auth(api_base: str) -> None:
                     except Exception as e:  # noqa: BLE001
                         st.error(f"No se pudo conectar al servidor: {e}")
 
-        with st.expander("🆘 ¿Olvidaste tu PIN?"):
+        with st.expander("¿Olvidaste tu PIN?"):
             st.caption(
                 "Use el **código de recuperación** que se le mostró al crear "
                 "la cuenta (formato `XXXX-XXXX`). Al usarlo se genera un "
@@ -287,50 +309,47 @@ def render_auth(api_base: str) -> None:
     # ---- REGISTRO ----
     with tab_reg:
         with st.form("form_register", clear_on_submit=False):
-            col1, col2 = st.columns(2)
-            with col1:
-                email_in = st.text_input(
-                    "Email *",
-                    placeholder="usuario@empresa.com",
-                    key="reg_email",
-                )
-                name_in = st.text_input(
-                    "Nombre y apellido *",
-                    placeholder="ej. Juan Pérez",
-                    key="reg_name",
-                )
-            with col2:
-                pin_reg = st.text_input(
-                    "PIN (4-8 dígitos) *",
-                    type="password",
-                    max_chars=8,
-                    help="Lo usará para iniciar sesión. Solo números.",
-                    key="reg_pin",
-                )
-                org_in = st.text_input(
-                    "Organización (opcional)",
-                    placeholder="ej. Banco XYZ",
-                    key="reg_org",
-                )
-                role_in = st.selectbox(
-                    "Rol (opcional)",
-                    [
-                        "",
-                        "Compliance / Cumplimiento",
-                        "Auditoría",
-                        "Riesgos",
-                        "Contabilidad",
-                        "Legal",
-                        "Operaciones",
-                        "Tecnología",
-                        "Académico / Investigación",
-                        "Otro",
-                    ],
-                    key="reg_role",
-                )
+            email_in = st.text_input(
+                "Email *",
+                placeholder="usuario@empresa.com",
+                key="reg_email",
+            )
+            name_in = st.text_input(
+                "Nombre y apellido *",
+                placeholder="ej. Juan Pérez",
+                key="reg_name",
+            )
+            pin_reg = st.text_input(
+                "PIN (4-8 dígitos) *",
+                type="password",
+                max_chars=8,
+                help="Lo usará para iniciar sesión. Solo números.",
+                key="reg_pin",
+            )
+            org_in = st.text_input(
+                "Organización (opcional)",
+                placeholder="ej. Banco XYZ",
+                key="reg_org",
+            )
+            role_in = st.selectbox(
+                "Rol (opcional)",
+                [
+                    "",
+                    "Compliance / Cumplimiento",
+                    "Auditoría",
+                    "Riesgos",
+                    "Contabilidad",
+                    "Legal",
+                    "Operaciones",
+                    "Tecnología",
+                    "Académico / Investigación",
+                    "Otro",
+                ],
+                key="reg_role",
+            )
 
             submitted = st.form_submit_button(
-                "Crear cuenta y comenzar",
+                "Crear cuenta y solicitar acceso",
                 type="primary",
                 use_container_width=True,
             )
@@ -385,8 +404,9 @@ def render_auth(api_base: str) -> None:
                     except Exception as e:  # noqa: BLE001
                         st.error(f"No se pudo conectar al servidor: {e}")
 
+    st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
     st.caption(
-        "🔒 **Política de datos**: su email y sus consultas se usan "
+        "**Política de datos**: su email y sus consultas se usan "
         "únicamente para identificarlo y medir la calidad del servicio. "
         "Registramos datos técnicos (IP, latencia, endpoint) con fines de "
         "seguridad y monitoreo. No compartimos sus datos con fines comerciales "
@@ -397,7 +417,7 @@ def render_auth(api_base: str) -> None:
         "inactividad. Puede eliminar sus datos de la aplicación cuando quiera (abajo)."
     )
 
-    with st.expander("🗑 Eliminar mi cuenta y todos mis datos"):
+    with st.expander("Eliminar mi cuenta y todos mis datos"):
         st.caption(
             "Borra su usuario, su historial de consultas, sus conversaciones y "
             "su feedback. Las encuestas de satisfacción se conservan "

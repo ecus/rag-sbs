@@ -74,7 +74,9 @@ st.set_page_config(
 )
 
 inyectar_estilos()
-render_header()
+# El header edge-to-edge se renderiza recién cuando hay sesión válida
+# (ver más abajo). En la pantalla de login, render_auth muestra su propia
+# tarjeta con la marca, sin el banner grande.
 
 
 # =========================================================================
@@ -159,6 +161,9 @@ if esta_logueado() and chequear_timeout():
 # 5) Marcar actividad en cada rerun (resetea timeout)
 if esta_logueado():
     tocar_actividad(api.base_url)
+
+# Header edge-to-edge: solo cuando hay sesión válida (aprobada).
+render_header()
 
 
 # ---------------------------------------------------------------------------
