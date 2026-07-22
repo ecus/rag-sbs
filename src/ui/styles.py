@@ -30,12 +30,17 @@ code, pre, .mono { font-family: 'JetBrains Mono', monospace !important; }
 
 /* ── Quitar paddings de Streamlit para que header sea edge-to-edge ───────── */
 .stApp > header { display: none; }
+[data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecoration"] {
+  display: none !important; height: 0 !important;
+}
+[data-testid="stAppViewContainer"] { padding-top: 0 !important; }
 [data-testid="stMainBlockContainer"] {
   padding-top: 0 !important;
   padding-bottom: 2rem !important;
   max-width: 100% !important;
 }
 [data-testid="stMain"] { padding: 0 !important; }
+[data-testid="stMain"] > div:first-child { padding-top: 0 !important; margin-top: 0 !important; }
 .block-container {
   padding-top: 0 !important;
   padding-left: 0 !important;
@@ -110,11 +115,28 @@ code, pre, .mono { font-family: 'JetBrains Mono', monospace !important; }
 
 /* ── Sidebar institucional ───────────────────────────────────────────────── */
 [data-testid="stSidebar"] {
-  background: #fafbfd !important;
+  background: #f7f9fc !important;
   border-right: 1px solid var(--sbs-border);
 }
+/* Quitar el padding-top del contenedor para que la franja azul llegue al borde */
+[data-testid="stSidebar"] > div:first-child { padding-top: 0 !important; }
 [data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
-  padding: 1rem 0.5rem;
+  padding: 0 0.9rem 1rem;
+}
+/* Franja azul del sidebar: continúa la banda del header */
+.sidebar-brand {
+  margin: 0 -0.9rem 1rem;
+  padding: 0;
+  height: 91px;
+  background: linear-gradient(180deg, #003d7a 0%, #002d5a 100%);
+  border-bottom: 3px solid var(--sbs-red);
+  display: flex; align-items: center; padding-left: 1rem;
+}
+.sidebar-brand-badge {
+  width: 44px; height: 44px; border-radius: 8px;
+  background: #fff; color: var(--sbs-blue);
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 14px; letter-spacing: 1px;
 }
 [data-testid="stSidebar"] h2,
 [data-testid="stSidebar"] h3 {
@@ -1471,11 +1493,14 @@ def resaltar_referencias_fuente(texto: str) -> str:
     return patron.sub(lambda m: f"<mark>Fuente {m.group(1)}</mark>", seguro)
 
 
-def render_fuente_card(numero: int, fuente: dict) -> str:
+def render_fuente_card(numero: int, fuente: dict, mostrar_tecnico: bool = False) -> str:
     """Renderiza una tarjeta de fuente con el número prominente.
 
     `fuente` es el dict del schema Source: {doc_id, title, score, via,
     section_path, url, ...}
+
+    mostrar_tecnico: si True, incluye "Detalles técnicos" (vía, relevancia).
+        Reservado para administración — el usuario final no los ve.
     """
     via = fuente.get("via", "vector")
     clase_via = (
@@ -1549,16 +1574,19 @@ def render_fuente_card(numero: int, fuente: dict) -> str:
             f'</div></details>'
         )
 
-    # Versión amigable: solo título + sección + link PDF
-    # Detalles técnicos (vía retrieval, score) van en <details> opcional
-    detalles_tecnicos = (
-        f'<details class="fuente-tecnico" style="margin-top:4px;">'
-        f'<summary style="font-size:10px;color:#94a3b8;cursor:pointer;">'
-        f'Detalles técnicos</summary>'
-        f'<div style="font-size:11px;color:#64748b;padding:6px 0;">'
-        f'{via_badge}<span class="score-chip">relevancia {score:.2f}</span>'
-        f'</div></details>'
-    )
+    # Versión amigable: solo título + sección + link PDF.
+    # Los detalles técnicos (vía retrieval, score) solo se muestran a admin.
+    if mostrar_tecnico:
+        detalles_tecnicos = (
+            f'<details class="fuente-tecnico" style="margin-top:4px;">'
+            f'<summary style="font-size:10px;color:#94a3b8;cursor:pointer;">'
+            f'Detalles técnicos</summary>'
+            f'<div style="font-size:11px;color:#64748b;padding:6px 0;">'
+            f'{via_badge}<span class="score-chip">relevancia {score:.2f}</span>'
+            f'</div></details>'
+        )
+    else:
+        detalles_tecnicos = ""
 
     return (
         f'<div class="fuente-wrapper">'

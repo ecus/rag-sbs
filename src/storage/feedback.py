@@ -58,6 +58,19 @@ async def resumen_feedback(pool: AsyncConnectionPool, limit: int = 100) -> dict:
                 """
             )
             agg = await cur.fetchone()
+            # Todos los votes con comentario (like y dislike) para gestionar
+            await cur.execute(
+                """
+                SELECT vote, email, question, answer, comment, created_at
+                FROM response_feedback
+                WHERE comment IS NOT NULL AND TRIM(comment) <> ''
+                ORDER BY created_at DESC
+                LIMIT %s
+                """,
+                (limit,),
+            )
+            con_comentario = await cur.fetchall()
+            # Dislikes (con o sin comentario) para el detalle clásico
             await cur.execute(
                 """
                 SELECT email, question, answer, comment, created_at
@@ -72,6 +85,17 @@ async def resumen_feedback(pool: AsyncConnectionPool, limit: int = 100) -> dict:
     return {
         "likes": int(agg[0] or 0),
         "dislikes": int(agg[1] or 0),
+        "comentarios": [
+            {
+                "vote": r[0],
+                "email": r[1],
+                "question": r[2],
+                "answer": (r[3] or "")[:600],
+                "comment": r[4],
+                "created_at": r[5].isoformat() if r[5] else None,
+            }
+            for r in con_comentario
+        ],
         "dislikes_detalle": [
             {
                 "email": r[0],

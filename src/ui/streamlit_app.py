@@ -580,7 +580,7 @@ def _procesar_streaming(
         if fuentes_recibidas:
             st.markdown(f"##### Fuentes citadas ({len(fuentes_recibidas)})")
             html = "".join(
-                render_fuente_card(i, f) for i, f in enumerate(fuentes_recibidas, 1)
+                render_fuente_card(i, f, mostrar_tecnico=es_admin()) for i, f in enumerate(fuentes_recibidas, 1)
             )
             st.markdown(html, unsafe_allow_html=True)
 
@@ -613,8 +613,14 @@ if "modo_tecnico" not in st.session_state:
     st.session_state.modo_tecnico = False
 
 with st.sidebar:
-    # La marca vive en el header (edge-to-edge). El sidebar arranca directo
-    # con la sesión activa para evitar duplicar el branding.
+    # Franja azul superior que continúa la banda del header (integra el sidebar
+    # con el resto del diseño; el badge, no el nombre, para no duplicar la marca).
+    st.markdown(
+        '<div class="sidebar-brand">'
+        '<div class="sidebar-brand-badge">SBS</div>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
 
     # Indicador de sesión activa (siempre visible)
     if esta_logueado():
@@ -986,7 +992,7 @@ with tab_chat:
             if md and md.get("sources"):
                 st.markdown(f"##### Fuentes ({len(md['sources'])})")
                 fuentes_html = "".join(
-                    render_fuente_card(i, f)
+                    render_fuente_card(i, f, mostrar_tecnico=es_admin())
                     for i, f in enumerate(md["sources"], 1)
                 )
                 st.markdown(fuentes_html, unsafe_allow_html=True)
@@ -1251,7 +1257,7 @@ with tab_chat:
                     f"##### Fuentes citadas ({len(respuesta['sources'])})",
                 )
                 fuentes_html = "".join(
-                    render_fuente_card(i, f)
+                    render_fuente_card(i, f, mostrar_tecnico=es_admin())
                     for i, f in enumerate(respuesta["sources"], 1)
                 )
                 st.markdown(fuentes_html, unsafe_allow_html=True)
@@ -1335,7 +1341,7 @@ with tab_ab:
                         unsafe_allow_html=True)
             st.markdown(f"##### Fuentes A ({len(rA['sources'])})")
             st.markdown(
-                "".join(render_fuente_card(i, f) for i, f in enumerate(rA["sources"], 1)),
+                "".join(render_fuente_card(i, f, mostrar_tecnico=es_admin()) for i, f in enumerate(rA["sources"], 1)),
                 unsafe_allow_html=True,
             )
 
@@ -1345,7 +1351,7 @@ with tab_ab:
                         unsafe_allow_html=True)
             st.markdown(f"##### Fuentes B ({len(rB['sources'])})")
             st.markdown(
-                "".join(render_fuente_card(i, f) for i, f in enumerate(rB["sources"], 1)),
+                "".join(render_fuente_card(i, f, mostrar_tecnico=es_admin()) for i, f in enumerate(rB["sources"], 1)),
                 unsafe_allow_html=True,
             )
 
@@ -1708,29 +1714,72 @@ with tab_runs:
     st.markdown("---")
 
     # ----------------------------------------------------------------------
-    # Feedback de respuestas (like/dislike + comentarios)
+    # Feedback de respuestas — gestión de comentarios
     # ----------------------------------------------------------------------
-    st.markdown("### 👍👎 Feedback de respuestas")
-    fb = api.feedback_summary(limit=50)
+    st.markdown("### Feedback de respuestas")
+    fb = api.feedback_summary(limit=100)
     if fb:
         fc1, fc2, fc3 = st.columns(3)
-        fc1.metric("👍 Likes", fb.get("likes", 0))
-        fc2.metric("👎 Dislikes", fb.get("dislikes", 0))
+        fc1.metric("Positivos", fb.get("likes", 0))
+        fc2.metric("Negativos", fb.get("dislikes", 0))
         total = fb.get("likes", 0) + fb.get("dislikes", 0)
         pct = round(100 * fb.get("likes", 0) / total) if total else 0
         fc3.metric("% satisfacción", f"{pct}%")
-        detalle = fb.get("dislikes_detalle", [])
-        if detalle:
-            st.markdown("**Dislikes para revisar:**")
-            for d in detalle:
-                with st.expander(f"👎 {(d.get('question') or 's/pregunta')[:70]}"):
-                    st.markdown(f"**Usuario:** {d.get('email') or '—'}")
-                    if d.get("comment"):
-                        st.markdown(f"**Comentario:** {d['comment']}")
-                    st.caption(f"Pregunta: {d.get('question') or '—'}")
-                    st.caption(f"Respuesta (extracto): {d.get('answer') or '—'}")
+
+        comentarios = fb.get("comentarios", [])
+        st.caption(
+            "Comentarios de los usuarios sobre las respuestas — para decidir "
+            "qué mejorar o corregir."
+        )
+        if comentarios:
+            # Filtro rápido
+            _filtro = st.radio(
+                "Mostrar", ["Todos", "Solo negativos", "Solo positivos"],
+                horizontal=True, key="fb_filtro", label_visibility="collapsed",
+            )
+            _vis = [
+                c for c in comentarios
+                if _filtro == "Todos"
+                or (_filtro == "Solo negativos" and c["vote"] == "down")
+                or (_filtro == "Solo positivos" and c["vote"] == "up")
+            ]
+            st.caption(f"{len(_vis)} comentario(s)")
+            for c in _vis:
+                _signo = "▼ Negativo" if c["vote"] == "down" else "▲ Positivo"
+                _fecha = (c.get("created_at") or "")[:16].replace("T", " ")
+                with st.expander(f"{_signo} · {(c.get('question') or 's/pregunta')[:65]}"):
+                    st.markdown(
+                        f"**Comentario:** {c.get('comment') or '—'}"
+                    )
+                    st.caption(f"Usuario: {c.get('email') or '—'} · {_fecha}")
+                    st.caption(f"Pregunta: {c.get('question') or '—'}")
+                    with st.container():
+                        st.caption("Respuesta que recibió (extracto):")
+                        st.text((c.get("answer") or "—")[:600])
+
+            # Export de comentarios a CSV para trabajar las mejoras
+            import csv as _csv
+            import io as _io
+            _buf = _io.StringIO()
+            _w = _csv.DictWriter(_buf, fieldnames=["fecha", "voto", "usuario",
+                                                   "pregunta", "comentario", "respuesta"])
+            _w.writeheader()
+            for c in comentarios:
+                _w.writerow({
+                    "fecha": c.get("created_at", ""),
+                    "voto": "negativo" if c["vote"] == "down" else "positivo",
+                    "usuario": c.get("email", ""),
+                    "pregunta": (c.get("question") or "").replace("\n", " "),
+                    "comentario": (c.get("comment") or "").replace("\n", " "),
+                    "respuesta": (c.get("answer") or "").replace("\n", " "),
+                })
+            st.download_button(
+                "Descargar comentarios (CSV)", data=_buf.getvalue(),
+                file_name="feedback_comentarios.csv", mime="text/csv",
+                key="fb_export",
+            )
         else:
-            st.info("No hay dislikes registrados. 🎉")
+            st.info("Todavía no hay comentarios de usuarios.")
     else:
         st.info("Aún no hay feedback.")
 
