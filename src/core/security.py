@@ -6,8 +6,10 @@ si algún día hay réplicas, mover el rate limiter a Redis.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
+import json
 import logging
 import os
 import secrets
@@ -27,12 +29,58 @@ def _admin_key() -> str | None:
     return os.environ.get("ADMIN_API_KEY") or None
 
 
-async def verificar_admin(request: Request) -> None:
-    """Dependency: exige header X-Admin-Key con la clave de ADMIN_API_KEY.
+def _admin_email() -> str:
+    return os.environ.get("ADMIN_EMAIL", "eurrutia489@gmail.com").strip().lower()
 
-    Si ADMIN_API_KEY no está configurada, los endpoints admin quedan
-    BLOQUEADOS (fail-closed), no abiertos.
+
+def _token_secret() -> str:
+    # Secreto para firmar el token de sesión admin. JWT_SECRET si existe,
+    # si no la propia admin key (siempre hay uno u otro en prod).
+    return os.environ.get("JWT_SECRET") or _admin_key() or "insecure-dev-secret"
+
+
+def emitir_token_admin(email: str, ttl_seg: int = 8 * 3600) -> str:
+    """Token de sesión admin firmado (HMAC-SHA256), sin dependencias externas.
+
+    Se emite SOLO al hacer login la cuenta admin. Formato: base64(payload).sig
     """
+    payload = {"email": email.strip().lower(), "exp": int(time.time()) + ttl_seg}
+    raw = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
+    sig = hmac.new(_token_secret().encode(), raw.encode(), hashlib.sha256).hexdigest()
+    return f"{raw}.{sig}"
+
+
+def verificar_token_admin(token: str) -> bool:
+    """Valida firma, expiración y que el email sea el admin."""
+    try:
+        raw, sig = token.split(".", 1)
+        esperada = hmac.new(_token_secret().encode(), raw.encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(sig, esperada):
+            return False
+        pad = "=" * (-len(raw) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(raw + pad))
+        if int(payload.get("exp", 0)) < int(time.time()):
+            return False
+        return payload.get("email") == _admin_email()
+    except Exception:
+        return False
+
+
+async def verificar_admin(request: Request) -> None:
+    """Dependency de endpoints admin. Acepta DOS formas de autenticación:
+
+    1. `Authorization: Bearer <token>` — token de sesión admin (SPA React).
+    2. `X-Admin-Key` con ADMIN_API_KEY — compatibilidad (UI Streamlit).
+
+    Si ADMIN_API_KEY no está configurada, queda BLOQUEADO (fail-closed).
+    """
+    # 1. Token de sesión admin (Bearer)
+    auth = request.headers.get("authorization", "")
+    if auth.lower().startswith("bearer "):
+        if verificar_token_admin(auth[7:].strip()):
+            return
+
+    # 2. X-Admin-Key (retrocompatible)
     esperada = _admin_key()
     if not esperada:
         raise HTTPException(503, "Administración deshabilitada (ADMIN_API_KEY no configurada).")

@@ -137,7 +137,13 @@ async def login(
     # Memoria persistente: se entrega solo tras autenticar con PIN
     from src.storage import query_log as _qlog
     memoria = await _qlog.historial_reciente(pool, perfil["email"], limit=20)
-    return {"ok": True, "user": perfil, "memory": memoria}
+    resp = {"ok": True, "user": perfil, "memory": memoria}
+    # Si es la cuenta admin, emitimos un token de sesión admin para la SPA
+    # (evita exponer ADMIN_API_KEY en el browser).
+    from src.core.security import _admin_email, emitir_token_admin
+    if (perfil.get("email") or "").strip().lower() == _admin_email():
+        resp["admin_token"] = emitir_token_admin(perfil["email"])
+    return resp
 
 
 @router.post("/activity")
