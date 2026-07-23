@@ -420,8 +420,8 @@ export default function Mapa() {
           ) : (
             <p className="mapa-hint">
               {modo === 'explorar'
-                ? 'Buscá o hacé click en una norma para ver su red de vínculos. Ideal para corpus grandes.'
-                : 'Pasá el mouse para resaltar la red de una norma; hacé click para fijarla y ver su detalle.'}
+                ? 'Busca o haz clic en una norma para ver su red de vínculos. Ideal para corpus grandes.'
+                : 'Pasa el mouse para resaltar la red de una norma; haz clic para fijarla y ver su detalle.'}
             </p>
           )}
           <div className="mapa-side-t" style={{ marginTop: 18 }}>Instituciones (documentos)</div>

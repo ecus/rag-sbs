@@ -90,7 +90,7 @@ export default function Login({ onAuth }: { onAuth: (u: User, mem: Mensaje[], ad
           <div className="brand-center">
             <div style={{ marginBottom: 12 }}><Logo size={52} variant="light" /></div>
             <div className="brand-title">Guardá tu código de recuperación</div>
-            <div className="brand-sub">Es la única forma de recuperar el acceso si olvidás tu PIN.</div>
+            <div className="brand-sub">Es la única forma de recuperar el acceso si olvidas tu PIN.</div>
           </div>
           <div className="rec-code">{codigo}</div>
           <p className="policy">
@@ -211,9 +211,8 @@ export default function Login({ onAuth }: { onAuth: (u: User, mem: Mensaje[], ad
         )}
 
         <p className="policy">
-          Tu email y consultas se usan solo para identificarte y medir la calidad del servicio.
-          Registramos datos técnicos con fines de seguridad y monitoreo. No compartimos tus datos
-          con fines comerciales.
+          Proyecto personal de demostración — no afiliado a la SBS ni a ninguna entidad oficial.
+          Tu email y consultas se usan solo para el funcionamiento de la app; no se comparten con terceros.
         </p>
       </div>
     </div>

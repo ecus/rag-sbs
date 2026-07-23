@@ -51,7 +51,7 @@ export default function Topicos() {
           {temas.length === 0 && (
             <div className="tp-empty">
               Las áreas temáticas aún no fueron generadas para este corpus. Se construyen desde el panel de
-              administración (agrupamiento automático de la normativa). Mientras tanto, abajo tenés las normas más citadas.
+              administración (agrupamiento automático de la normativa). Mientras tanto, abajo tienes las normas más citadas.
             </div>
           )}
           {temas.length > 0 && (

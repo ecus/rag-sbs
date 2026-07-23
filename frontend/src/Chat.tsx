@@ -554,7 +554,7 @@ export default function Chat({ user, adminToken, onExit, onTimeout }: { user: Us
   useEffect(() => {
     listConversations(user.email).then(setConvs)
     // Nota: las métricas por usuario ya las registra la API en cada consulta
-    // (log_query con alias). /v1/analytics/session es admin-only, no se llama acá.
+    // (log_query con alias). /v1/analytics/session es admin-only, no se llama aquí.
   }, [user.email])
 
   useEffect(() => {
@@ -815,7 +815,7 @@ export default function Chat({ user, adminToken, onExit, onTimeout }: { user: Us
             + Nueva consulta
           </button>
           <div className="sb-label">Conversaciones</div>
-          {convs.length === 0 && <div style={{ fontSize: 12, color: '#7d93b3' }}>Aún no tenés conversaciones.</div>}
+          {convs.length === 0 && <div style={{ fontSize: 12, color: '#7d93b3' }}>Aún no tienes conversaciones.</div>}
           {convs.map((c) =>
             editId === c.id ? (
               <div key={c.id} className="sb-conv-row editing">
@@ -927,8 +927,8 @@ export default function Chat({ user, adminToken, onExit, onTimeout }: { user: Us
         <div className="chat" ref={chatRef}>
           {vacio && !siglasPend && !planPend ? (
             <div className="empty">
-              <h2>¿Sobre qué normativa querés consultar?</h2>
-              <p>Escribí tu pregunta abajo, o elegí un ejemplo</p>
+              <h2>¿Sobre qué normativa quieres consultar?</h2>
+              <p>Escribe tu pregunta abajo, o elige un ejemplo</p>
               <div className="examples">
                 {EJEMPLOS.map((e, i) => (
                   <button key={i} className="ex-card" onClick={() => enviar(e.texto)}>
