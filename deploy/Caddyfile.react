@@ -1,0 +1,86 @@
+# Caddyfile PROPUESTO para el lanzamiento del frontend React.
+#
+# Cambio respecto al Caddyfile actual:
+#   - La RAÍZ (/) sirve el SPA React (estático desde /srv/app).
+#   - El panel Streamlit queda como ADMIN en /admin (baseUrlPath=admin).
+#   - Las rutas de API (/v1, /api, /graph) no cambian.
+#
+# Para aplicarlo (en ventana de mantenimiento):
+#   1. cd frontend && npm ci && npm run build      # genera frontend/dist
+#   2. En docker-compose.prod.yml, en el servicio `caddy`:
+#        volumes:
+#          - ./deploy/Caddyfile.react:/etc/caddy/Caddyfile:ro
+#          - ./frontend/dist:/srv/app:ro
+#   3. En el servicio `ui` (Streamlit), agregar al command:
+#          - --server.baseUrlPath=admin
+#   4. docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+#
+# Rollback: volver a montar ./deploy/Caddyfile y quitar baseUrlPath.
+
+{$DOMAIN} {
+    encode gzip
+
+    # --- API REST y streaming (sin prefijo, para el SPA y clientes externos) ---
+    handle /v1/* {
+        reverse_proxy api:8000 {
+            header_up Host {host}
+            header_up X-Real-IP {remote}
+            flush_interval -1
+        }
+    }
+
+    # --- API con prefijo /api (compat) ---
+    handle /api/* {
+        uri strip_prefix /api
+        reverse_proxy api:8000 {
+            header_up Host {host}
+            header_up X-Real-IP {remote}
+            flush_interval -1
+        }
+    }
+
+    # --- HTML del grafo navegable del API ---
+    handle /graph {
+        reverse_proxy api:8000
+    }
+
+    # --- Panel de administración: Streamlit bajo /admin ---
+    # Requiere que Streamlit corra con --server.baseUrlPath=admin
+    handle /admin* {
+        reverse_proxy ui:8501 {
+            header_up Host {host}
+            header_up X-Real-IP {remote}
+        }
+    }
+
+    # --- Assets con hash: cache largo e inmutable (el nombre cambia en cada build) ---
+    handle_path /assets/* {
+        root * /srv/app/assets
+        header Cache-Control "public, max-age=31536000, immutable"
+        file_server
+    }
+
+    # --- SPA React en la raíz (fallback a index.html para rutas internas) ---
+    # index.html SIN caché → cada deploy se toma sin que el usuario refresque a mano.
+    handle {
+        root * /srv/app
+        header Cache-Control "no-cache, must-revalidate"
+        try_files {path} /index.html
+        file_server
+    }
+
+    # Headers de seguridad
+    header {
+        Strict-Transport-Security "max-age=31536000;"
+        X-Content-Type-Options "nosniff"
+        -X-Frame-Options
+        Content-Security-Policy "frame-ancestors 'self' https://consultasbs.eurrutia.dev https://*.nip.io https://3.220.87.49.nip.io;"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+
+    log {
+        output stdout
+        format json
+        level INFO
+    }
+}
