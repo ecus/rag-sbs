@@ -12,6 +12,7 @@ cache semántico. Esto es la versión mínima funcional para validar end-to-end.
 
 from __future__ import annotations
 
+import datetime
 import logging
 import time
 from uuid import uuid4
@@ -63,6 +64,10 @@ REGLAS INVIOLABLES:
 - Separa explícitamente: conclusión normativa vs interpretación.
 - Recuerda al usuario que toda respuesta requiere validación humana antes de
   decisiones operativas reales.
+- VIGENCIA: no afirmes que una norma está vigente o derogada salvo que el propio
+  contexto lo diga de forma explícita. Si el prompt te indica que la fuente
+  principal tiene varios años, cierra con una breve "Nota de vigencia:" que
+  recuerde verificar si hubo modificaciones posteriores.
 
 🧭 USO DEL HISTORIAL CONVERSACIONAL:
 
@@ -275,6 +280,17 @@ REGLAS DE CITAS:
 """
 
 
+def _anio_pub(frag) -> int | None:
+    """Año de publicación de un fragmento, o None."""
+    fecha = getattr(frag, "document_publication_date", None)
+    if not fecha:
+        return None
+    try:
+        return int(str(fecha)[:4])
+    except ValueError:
+        return None
+
+
 def _construir_prompt_usuario(pregunta: str, fragmentos: list) -> str:
     """Concatena contexto + pregunta en un user prompt."""
     if not fragmentos:
@@ -288,6 +304,9 @@ def _construir_prompt_usuario(pregunta: str, fragmentos: list) -> str:
     for i, frag in enumerate(fragmentos, 1):
         section = (getattr(frag, "metadata", {}) or {}).get("section_path") or ""
         cabecera = f"doc: {frag.document_title}"
+        anio = _anio_pub(frag)
+        if anio:
+            cabecera += f" · publicada: {anio}"
         if section and section not in ("(sin estructura)", "(preámbulo)"):
             cabecera += f" · sección: {section}"
         partes_contexto.append(
@@ -296,12 +315,29 @@ def _construir_prompt_usuario(pregunta: str, fragmentos: list) -> str:
         )
     contexto = "\n---\n".join(partes_contexto)
 
+    # Señal de vigencia: si la fuente principal tiene varios años, se lo indicamos
+    # al modelo (con el año actual como anclaje, porque el LLM no lo conoce) para
+    # que agregue una nota de "verificar vigencia". Nunca afirmar derogación.
+    directiva_vigencia = ""
+    anio_actual = datetime.date.today().year
+    anio_top = _anio_pub(fragmentos[0])
+    if anio_top and (anio_actual - anio_top) >= 5:
+        directiva_vigencia = (
+            f"\n\nDato de vigencia: el año actual es {anio_actual} y la fuente principal "
+            f"([Fuente 1]) es del año {anio_top} ({anio_actual - anio_top} años de antigüedad). "
+            "Si tu respuesta se apoya principalmente en normas de varios años atrás, agrega al "
+            "final una breve 'Nota de vigencia' recordando verificar si hubo modificaciones "
+            "posteriores. No afirmes que una norma está derogada salvo que el propio texto del "
+            "contexto lo diga explícitamente."
+        )
+
     return (
         f"Pregunta del usuario:\n{pregunta}\n\n"
         f"Contexto recuperado:\n{contexto}\n\n"
         "Genera la respuesta siguiendo las reglas inviolables. "
         "Cita explícitamente las fuentes [Fuente N] que uses, e indica la sección "
         "específica (Capítulo / Artículo) cuando esté disponible."
+        + directiva_vigencia
     )
 
 
