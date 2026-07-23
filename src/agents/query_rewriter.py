@@ -286,3 +286,29 @@ def formatear_historial_para_prompt(historial: list[dict], max_turnos: int = 3) 
         bloques.append(f"\n{rol}: {contenido}")
     bloques.append("\n=== FIN HISTORIAL ===\n")
     return "\n".join(bloques)
+
+
+async def generar_hipotetico(consulta: str, llm: LLMProvider) -> str:
+    """HyDE (Hypothetical Document Embeddings).
+
+    Genera un pasaje normativo hipotético que respondería a la consulta. Ese
+    pasaje —escrito con el vocabulario técnico del dominio (nombres de cuentas,
+    artículos, resoluciones)— matchea mejor los documentos reales que una
+    pregunta genérica. Solo se usa para el embedding vectorial; la parte léxica
+    del hybrid search sigue con la consulta original.
+    """
+    prompt = (
+        "Escribí un párrafo breve (3-5 oraciones), en el estilo de una norma o "
+        "manual de contabilidad de la SBS del Perú, que respondería la siguiente "
+        "consulta. Usá terminología regulatoria concreta (nombres de cuentas, "
+        "artículos, resoluciones, conceptos contables). No aclares que es "
+        "hipotético; escribí solo el pasaje.\n\n"
+        f"Consulta: {consulta}\n\nPasaje:"
+    )
+    try:
+        resultado = await llm.generate(prompt, system=None, temperature=0.2, max_tokens=220)
+        texto = (resultado.text or "").strip()
+        return texto or consulta
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("HyDE falló: %s — usar consulta original", exc)
+        return consulta

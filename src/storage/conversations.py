@@ -96,7 +96,9 @@ async def mensajes_de_conversacion(
 ) -> list[dict]:
     """Mensajes de una conversación en orden cronológico.
 
-    Retorna [{rol:'user',texto}, {rol:'assistant',texto}, ...].
+    Retorna [{rol:'user',texto}, {rol:'assistant',texto,sources,confidence}, ...].
+    Las fuentes citadas (sources_summary) se adjuntan al mensaje del asistente
+    para que las conversaciones guardadas muestren sus citas.
     """
     if not conversation_id:
         return []
@@ -104,7 +106,7 @@ async def mensajes_de_conversacion(
         async with conn.cursor() as cur:
             await cur.execute(
                 """
-                SELECT query_text, answer_text
+                SELECT query_text, answer_text, sources_summary, confidence
                 FROM query_log
                 WHERE conversation_id = %s
                 ORDER BY created_at ASC
@@ -114,11 +116,28 @@ async def mensajes_de_conversacion(
             )
             filas = await cur.fetchall()
     mensajes: list[dict] = []
-    for q, a in filas:
+    for q, a, srcs, conf in filas:
         if q:
             mensajes.append({"rol": "user", "texto": q})
         if a:
-            mensajes.append({"rol": "assistant", "texto": a})
+            fuentes = [
+                {
+                    "title": s.get("title"),
+                    "issuer": s.get("issuer"),
+                    "url": s.get("url"),
+                    "section_path": s.get("section_path"),
+                    "content_snippet": s.get("content_snippet"),
+                    "publication_date": s.get("publication_date"),
+                    "date_precision": s.get("date_precision"),
+                }
+                for s in (srcs or [])
+            ]
+            mensajes.append({
+                "rol": "assistant",
+                "texto": a,
+                "sources": fuentes,
+                "confidence": conf,
+            })
     return mensajes
 
 

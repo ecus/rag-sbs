@@ -26,6 +26,7 @@ class QueryOptions(BaseModel):
     max_hops: int = Field(default=0, ge=0, le=2)
     rerank_enabled: bool = True       # rerank LLM post-fusión
     report_mode: bool = False         # respuesta estructurada por dimensiones
+    hyde: bool = False                # HyDE: embebe un pasaje hipotético (mejora consultas vagas)
     stream: bool = False              # streaming — Sprint posterior
 
 
@@ -70,6 +71,8 @@ class Source(BaseModel):
     section_path: str | None = None     # "Capítulo VII > Artículo 45" si chunker estructural
     content_snippet: str | None = None  # texto exacto del chunk citado (~500 chars)
     issuer: str | None = None           # SBS / BCRP / Congreso / MEF / SMV / INDECOPI / SUNAT
+    publication_date: str | None = None # ISO 'AAAA-MM-DD' (ver date_precision)
+    date_precision: str | None = None   # 'dia' | 'anio' — si 'anio', solo el año es confiable
 
 
 class QueryResponse(BaseModel):

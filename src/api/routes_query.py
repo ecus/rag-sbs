@@ -31,6 +31,7 @@ from src.agents.calculator_agent import (
 from src.agents.planner import decidir_plan
 from src.agents.query_rewriter import (
     formatear_historial_para_prompt,
+    generar_hipotetico,
     reescribir_consulta,
 )
 from src.core.deps import get_llm, get_pool
@@ -460,7 +461,10 @@ async def query(
 
     # 1. Embedding (usa consulta reescrita para mejor recall)
     try:
-        vectores = await llm.embed([consulta_efectiva])
+        texto_embed = consulta_efectiva
+        if payload.options.hyde:
+            texto_embed = await generar_hipotetico(consulta_efectiva, llm)
+        vectores = await llm.embed([texto_embed])
         vector_consulta = vectores[0]
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(
@@ -622,6 +626,8 @@ async def query(
                 section_path=(frag.metadata or {}).get("section_path"),
                 content_snippet=snippet,
                 issuer=getattr(frag, "document_issuer", None),
+                publication_date=getattr(frag, "document_publication_date", None),
+                date_precision=getattr(frag, "document_date_precision", None),
             )
         )
 
@@ -652,9 +658,14 @@ async def query(
                 sources_summary=[
                     {
                         "issuer": f.issuer,
-                        "title": (f.title or "")[:120],
+                        "title": (f.title or "")[:160],
                         "score": f.score,
                         "doc_id": f.doc_id,
+                        "url": f.url,
+                        "section_path": f.section_path,
+                        "content_snippet": (f.content_snippet or "")[:700],
+                        "publication_date": f.publication_date,
+                        "date_precision": f.date_precision,
                     }
                     for f in fuentes[:8]
                 ],
@@ -787,8 +798,12 @@ async def query_stream(
                     consulta_efectiva = rewrite_info["rewritten"]
                 yield _sse("rewrite", rewrite_info)
 
+            texto_embed = consulta_efectiva
+            if payload.options.hyde:
+                yield _sse("status", {"step": "hyde"})
+                texto_embed = await generar_hipotetico(consulta_efectiva, llm)
             yield _sse("status", {"step": "embedding"})
-            vectores = await llm.embed([consulta_efectiva])
+            vectores = await llm.embed([texto_embed])
             vector_consulta = vectores[0]
 
             yield _sse("status", {"step": "retrieval"})
@@ -914,6 +929,8 @@ async def query_stream(
                     "section_path": (frag.metadata or {}).get("section_path"),
                     "content_snippet": snippet,
                     "issuer": getattr(frag, "document_issuer", None),
+                    "publication_date": getattr(frag, "document_publication_date", None),
+                    "date_precision": getattr(frag, "document_date_precision", None),
                 })
             yield _sse("sources", fuentes_data)
 
@@ -967,9 +984,14 @@ async def query_stream(
                         sources_summary=[
                             {
                                 "issuer": getattr(f, "document_issuer", None),
-                                "title": (f.document_title or "")[:120],
+                                "title": (f.document_title or "")[:160],
                                 "score": float(f.score),
                                 "doc_id": str(f.document_id),
+                                "url": f.document_url,
+                                "section_path": (f.metadata or {}).get("section_path"),
+                                "content_snippet": ((f.content or "").strip()[:700]),
+                                "publication_date": getattr(f, "document_publication_date", None),
+                                "date_precision": getattr(f, "document_date_precision", None),
                             }
                             for f in fragmentos[:8]
                         ],

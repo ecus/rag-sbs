@@ -31,6 +31,8 @@ class RetrievedChunk:
     page: int | None = None
     metadata: dict = field(default_factory=dict)   # section_path, structural_level, etc.
     document_issuer: str | None = None  # SBS / BCRP / Congreso / etc.
+    document_publication_date: str | None = None   # ISO 'AAAA-MM-DD'
+    document_date_precision: str | None = None      # 'dia' | 'anio'
 
 
 class PgVectorStore:
@@ -196,6 +198,7 @@ class PgVectorStore:
             SELECT c.id, c.document_id, c.content, c.metadata,
                    1 - (c.embedding <=> %s::vector) AS vector_score,
                    d.title, d.source_url, d.id AS doc_uuid,
+                   d.publication_date, d.metadata->>'date_precision' AS date_precision,
                    COALESCE(d.metadata->>'issuer', '(s/d)') AS doc_issuer
             FROM chunks c
             JOIN documents d ON d.id = c.document_id
@@ -213,6 +216,7 @@ class PgVectorStore:
             SELECT c.id, c.document_id, c.content, c.metadata,
                    ts_rank(c.content_tsv, plainto_tsquery('spanish', %s)) AS text_score,
                    d.title, d.source_url, d.id AS doc_uuid,
+                   d.publication_date, d.metadata->>'date_precision' AS date_precision,
                    COALESCE(d.metadata->>'issuer', '(s/d)') AS doc_issuer
             FROM chunks c
             JOIN documents d ON d.id = c.document_id
@@ -271,6 +275,12 @@ class PgVectorStore:
                 text_score=item["text_score"],
                 metadata=item["fila"].get("metadata") or {},
                 document_issuer=item["fila"].get("doc_issuer"),
+                document_publication_date=(
+                    item["fila"]["publication_date"].isoformat()
+                    if item["fila"].get("publication_date")
+                    else None
+                ),
+                document_date_precision=item["fila"].get("date_precision"),
             )
             for item in rankeados
         ]
