@@ -60,8 +60,13 @@ class PgVectorStore:
         document_type: str | None = None,
         domain: str | None = None,
         metadata: dict | None = None,
+        publication_date=None,
     ) -> UUID:
-        """Inserta documento (versión 1 si nuevo). Retorna UUID interno."""
+        """Inserta documento (versión 1 si nuevo). Retorna UUID interno.
+
+        `publication_date` (date | None): fecha de publicación detectada en la
+        ingesta; la precisión ('dia'/'anio') va en metadata['date_precision'].
+        """
         async with self.conn.cursor(row_factory=dict_row) as cursor:
             # Si existe documento con mismo hash → reutilizar (idempotente)
             await cursor.execute(
@@ -85,8 +90,8 @@ class PgVectorStore:
                 """
                 INSERT INTO documents
                     (document_id, version_id, title, source_url, document_type,
-                     domain, content_hash, metadata)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                     domain, content_hash, metadata, publication_date)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
                 (
@@ -98,6 +103,7 @@ class PgVectorStore:
                     domain,
                     content_hash,
                     Jsonb(metadata or {}),
+                    publication_date,
                 ),
             )
             fila = await cursor.fetchone()

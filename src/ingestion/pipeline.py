@@ -14,6 +14,7 @@ from uuid import UUID
 
 from psycopg_pool import AsyncConnectionPool
 
+from src.ingestion.date_extractor import detectar_fecha
 from src.ingestion.differ import classify_change, hash_bytes, hash_text, has_changed
 from src.ingestion.downloader import Downloader
 from src.ingestion.repository import IngestionRepository
@@ -206,6 +207,16 @@ async def process_source(
 
     # 7. Upsert atómico
     document_id_slug = _normalizar_nombre(nombre)
+    # Fecha de publicación (sin LLM): dateline en el texto / fecha en la URL o
+    # slug / año en resolution_number. Así los documentos nuevos entran ya con
+    # fecha (antes solo se poblaba por backfill).
+    meta_src = source.get("metadata", {})
+    _fecha = detectar_fecha(
+        texto[:1200], url, document_id_slug,
+        meta_src.get("resolution_number"), meta_src.get("year"),
+    )
+    publication_date = _fecha[0] if _fecha else None
+    date_precision = _fecha[1] if _fecha else None
     async with pool.connection() as conn:
         async with conn.transaction():
             store = PgVectorStore(conn)
@@ -221,7 +232,9 @@ async def process_source(
                     "fetched_url": url,
                     "fetched_via": "scheduler",
                     "content_type": res.content_type,
+                    **({"date_precision": date_precision} if date_precision else {}),
                 },
+                publication_date=publication_date,
             )
             indexados = await store.insert_chunks(
                 doc_uuid,
