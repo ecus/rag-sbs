@@ -149,20 +149,30 @@ async def descubrir_topicos(
     llm: LLMProvider,
     *,
     n_topicos: int = 8,
+    max_chunks: int = 20000,
 ) -> dict:
     """Pipeline completo: K-means → naming → persistencia.
 
     Antes de poblar, elimina nodos `kind='topic'` previos para no acumular.
+
+    max_chunks: clusteriza sobre una MUESTRA aleatoria de a lo sumo esta
+    cantidad de chunks. Con corpus grandes (>100k chunks) cargar todos los
+    embeddings en memoria satura la RAM del contenedor (float64 en sklearn).
+    Como cada documento tiene decenas de chunks, la muestra igual cubre casi
+    todos los documentos. 0 o negativo = sin límite (cargar todos).
     """
-    # 1. Cargar todos los chunks con sus embeddings
+    # 1. Cargar una muestra de chunks con sus embeddings (acota la RAM)
+    limite_sql = "" if max_chunks and max_chunks <= 0 else "ORDER BY random() LIMIT %s"
+    params = () if max_chunks and max_chunks <= 0 else (max_chunks,)
     async with pool.connection() as conn:
         async with conn.cursor(row_factory=dict_row) as cursor:
             await cursor.execute(
-                """
+                f"""
                 SELECT c.id, c.content, c.document_id, c.embedding
                 FROM chunks c
-                ORDER BY c.id
-                """
+                {limite_sql}
+                """,
+                params,
             )
             filas = list(await cursor.fetchall())
 
@@ -174,8 +184,14 @@ async def descubrir_topicos(
     chunk_ids = [f["id"] for f in filas]
     contenidos = [f["content"] for f in filas]
     document_ids = [f["document_id"] for f in filas]
-    # pgvector + register_vector_async retorna numpy.ndarray
-    embeddings = np.vstack([np.asarray(f["embedding"], dtype=np.float32) for f in filas])
+    # El embedding puede venir como numpy.ndarray (si el tipo vector está
+    # registrado en la conexión) o como objeto Vector de pgvector. Normalizamos.
+    def _a_np(e):
+        if hasattr(e, "to_list"):
+            e = e.to_list()
+        return np.asarray(e, dtype=np.float32)
+
+    embeddings = np.vstack([_a_np(f["embedding"]) for f in filas])
 
     # 2. K-means
     logger.info("K-means sobre %d chunks → %d clusters", len(filas), n_topicos)

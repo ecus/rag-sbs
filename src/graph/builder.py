@@ -143,8 +143,11 @@ async def construir_para_documento(
             aristas_creadas += 1
 
         # 4. Iterar chunks → extraer menciones → crear nodos+aristas
+        # self_label = norma canónica de ESTE documento, para calificar los
+        # "artículo N de la presente Resolución" con la norma propia.
+        self_label = f"Res-SBS-{numero_res}" if numero_res else None
         for chunk_id, contenido in chunks_filas:
-            menciones = extraer_menciones(contenido)
+            menciones = extraer_menciones(contenido, self_label=self_label)
             for mencion in menciones:
                 # Evitar self-citation explícita (la canónica ya la creamos arriba)
                 if (

@@ -94,16 +94,77 @@ def _label_articulo(numero: str) -> str:
     return f"Articulo-{int(numero)}"
 
 
+def _label_articulo_calificado(numero: str, norma_padre: str) -> str:
+    """Artículo calificado con su norma padre: 'Ley-26702' + '52' → 'Ley-26702 · Art. 52'.
+
+    Un número de artículo suelto ("Articulo-52") no identifica la norma: el art. 52
+    de la Ley 26702 y el art. 52 de otro reglamento son cosas distintas y no deben
+    colapsar en el mismo nodo. Calificarlo con la norma padre elimina esos falsos
+    puentes entre documentos que citan "artículo 52" de normas diferentes.
+    """
+    return f"{norma_padre} · Art. {int(numero)}"
+
+
+# Conector norma-padre tras un artículo: "…artículo 52[°] de la Ley N° 26702".
+# Captura el "de la / del / de" que precede a la norma.
+RX_CONECTOR_PADRE: Final = re.compile(
+    r"^\s*[°º]?\s*,?\s*(?:de\s+la|del|de)\s+",
+    re.IGNORECASE,
+)
+# Norma padre "propia" del documento: "de la presente Ley/Resolución/Reglamento…".
+RX_PADRE_PROPIO: Final = re.compile(
+    r"^(?:la\s+|el\s+)?(?:present[ae]|mism[ao]|citad[ao]|referid[ao]|indicad[ao]|"
+    r"acotad[ao]|antes\s+mencionad[ao])\s+"
+    r"(?:[Ll]ey|[Rr]esoluci[oó]n|[Cc]ircular|[Rr]eglamento|norma)\b",
+    re.IGNORECASE,
+)
+RX_PADRE_LEY: Final = re.compile(r"^[Ll]ey\s+(?:N[°ºo]?\.?\s*)?(\d{4,6})\b")
+
+
+def _detectar_norma_padre(cola: str, self_label: str | None) -> str | None:
+    """Dado el texto inmediatamente posterior a un 'artículo N', devuelve la
+    etiqueta canónica de la norma que lo contiene, o None si no es explícita.
+
+    Casos soportados (los dominantes en normativa peruana):
+      - "… de la Ley N° 26702"           → 'Ley-26702'
+      - "… de la Resolución SBS N° 504-2021" → 'Res-SBS-504-2021'
+      - "… de la Circular G-139"          → 'Circular-G-139'
+      - "… de la presente Ley/Resolución" → self_label (la propia norma del doc)
+    Las referencias implícitas sin norma nombrada ("el artículo anterior") quedan
+    sin calificar a propósito (no se puede saber la norma con regex).
+    """
+    m = RX_CONECTOR_PADRE.match(cola)
+    if not m:
+        return None
+    resto = cola[m.end():]
+    if RX_PADRE_PROPIO.match(resto):
+        return self_label
+    ml = RX_PADRE_LEY.match(resto)
+    if ml:
+        return _label_ley(ml.group(1))
+    mr = RX_RESOLUCION.match(resto)
+    if mr:
+        return _label_resolucion(mr.group(1), mr.group(2))
+    mc = RX_CIRCULAR.match(resto)
+    if mc:
+        return _label_circular(mc.group(1))
+    return None
+
+
 def _label_anexo(numero: str) -> str:
     return f"Anexo-{numero.upper()}"
 
 
-def extraer_menciones(texto: str) -> list[Mention]:
+def extraer_menciones(texto: str, self_label: str | None = None) -> list[Mention]:
     """Aplica todos los patrones y retorna lista de menciones únicas por (kind, label).
 
     Mantenemos múltiples menciones del mismo (kind,label) si están en spans distintos
     — cada una es evidencia adicional de la cita. La deduplicación a nivel de nodo
     la hace el repositorio.
+
+    `self_label` (opcional) = etiqueta canónica de la norma que ES este documento
+    (p.ej. 'Res-SBS-504-2021'). Se usa para calificar referencias del tipo
+    "artículo N de la presente Resolución" con la norma propia del documento.
     """
     menciones: list[Mention] = []
 
@@ -142,10 +203,21 @@ def extraer_menciones(texto: str) -> list[Mention]:
         )
 
     for match in RX_ARTICULO.finditer(texto):
+        numero = match.group(1)
+        # Mirar el texto inmediatamente posterior para calificar el artículo con
+        # su norma padre ("… de la Ley 26702"). Si no hay norma explícita, queda
+        # como artículo suelto (que la UI trata como atributo, no como puente).
+        cola = texto[match.end() : match.end() + 90]
+        norma_padre = _detectar_norma_padre(cola, self_label)
+        etiqueta = (
+            _label_articulo_calificado(numero, norma_padre)
+            if norma_padre
+            else _label_articulo(numero)
+        )
         menciones.append(
             Mention(
                 kind="articulo",
-                label=_label_articulo(match.group(1)),
+                label=etiqueta,
                 raw=match.group(0),
                 start=match.start(),
                 end=match.end(),

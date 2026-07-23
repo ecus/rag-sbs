@@ -188,14 +188,16 @@ async def post_export_obsidian(
 @router.post("/v1/graph/topics/build")
 async def post_construir_topicos(
     n_topicos: int = 8,
+    max_chunks: int = 20000,
     pool: AsyncConnectionPool = Depends(get_pool),
     llm: LLMProvider = Depends(get_llm),
 ) -> dict:
     """K-means sobre embeddings + LLM nombra cada cluster.
 
     Produce nodos `kind='topic'` y aristas `relation='same_topic'` documento↔tópico.
+    max_chunks acota la muestra para no saturar la RAM (0 = todos).
     """
-    return await descubrir_topicos(pool, llm, n_topicos=n_topicos)
+    return await descubrir_topicos(pool, llm, n_topicos=n_topicos, max_chunks=max_chunks)
 
 
 @router.get("/v1/stats/by-issuer")
@@ -393,14 +395,18 @@ async def post_clasificar_citaciones(
 # Paleta por tipo de nodo — institucional SBS (legible sobre fondo claro)
 # Documento = azul SBS profundo (autoridad central)
 # Resolución = azul medio, Ley = verde institucional, etc.
+# Entidades estructurales (ley/resolución/artículo/anexo): paleta SLATE neutra,
+# deliberadamente distinta de los colores de institución (COLORES_ISSUER) para
+# no confundir p.ej. una "ley" (verde antes) con documentos del MEF (verde).
+# Los `document` no usan esta tabla: se colorean por institución emisora.
 COLORES_NODO = {
-    "document":   "#003d7a",   # azul SBS — documento (autoridad central)
-    "resolution": "#0073cf",   # azul medio — resolución SBS
-    "ley":        "#059669",   # verde institucional — ley
-    "circular":   "#d97706",   # ámbar oscuro — circular
-    "articulo":   "#475569",   # slate-700 — artículo
-    "anexo":      "#7c3aed",   # violeta — anexo
-    "topic":      "#db2777",   # rosa fuerte — tópico (L2)
+    "document":   "#003d7a",   # (no se usa: documentos van por issuer)
+    "resolution": "#5b6b8c",   # slate azulado — resolución
+    "ley":        "#334155",   # slate oscuro — ley
+    "circular":   "#8a94a6",   # slate medio — circular
+    "articulo":   "#aab4c4",   # slate claro — artículo
+    "anexo":      "#c7cfdb",   # slate muy claro — anexo
+    "topic":      "#db2777",   # rosa — tópico (L2)
 }
 
 # Paleta por tipo de arista (legible sobre fondo blanco/claro)
@@ -426,16 +432,28 @@ ANCHOS_ARISTA = {
 @router.get("/v1/graph/data")
 async def get_graph_data(
     limit_nodes: int = 500,
+    max_edges_per_node: int = 0,
+    kind: str | None = None,
     pool: AsyncConnectionPool = Depends(get_pool),
 ) -> dict:
     """JSON con nodos y aristas en formato vis-network.
 
     Usado por la UI `/graph`. También sirve para integraciones externas.
+
+    Args:
+        max_edges_per_node: si > 0, sparsifica el grafo conservando solo las
+            ``max_edges_per_node`` aristas de mayor ``score`` por nodo origen.
+            Evita el "ovillo" de decenas de miles de aristas en corpus grandes.
     """
     async with pool.connection() as conn:
         async with conn.cursor() as cursor:
+            # Filtro opcional por tipo de nodo (p.ej. 'circular'): sin esto el
+            # mapa solo carga los nodos de mayor grado y los tipos poco conectados
+            # (circulares) nunca aparecen.
+            where_kind = "WHERE n.kind = %s" if kind else ""
+            params_nodos = [kind, limit_nodes] if kind else [limit_nodes]
             await cursor.execute(
-                """
+                f"""
                 SELECT n.id, n.kind, n.label, n.document_id,
                        d.title AS doc_title,
                        COALESCE(d.metadata->>'issuer', '(s/d)') AS issuer,
@@ -443,13 +461,14 @@ async def get_graph_data(
                        (SELECT COUNT(*) FROM graph_edges WHERE src_node = n.id) AS out_deg
                 FROM graph_nodes n
                 LEFT JOIN documents d ON d.id = n.document_id
+                {where_kind}
                 ORDER BY (
                     (SELECT COUNT(*) FROM graph_edges WHERE dst_node = n.id) +
                     (SELECT COUNT(*) FROM graph_edges WHERE src_node = n.id)
                 ) DESC
                 LIMIT %s
                 """,
-                (limit_nodes,),
+                params_nodos,
             )
             filas_nodos = await cursor.fetchall()
 
@@ -464,6 +483,18 @@ async def get_graph_data(
                 (list(ids_visibles), list(ids_visibles)),
             )
             filas_aristas = await cursor.fetchall()
+
+    # Sparsificación opcional: top-K aristas por nodo origen según score.
+    # Reduce de decenas de miles a unos cientos → grafo legible y liviano.
+    if max_edges_per_node and max_edges_per_node > 0:
+        por_src: dict = {}
+        for fila in filas_aristas:
+            por_src.setdefault(fila[0], []).append(fila)
+        podadas = []
+        for _src, grupo in por_src.items():
+            grupo.sort(key=lambda f: (f[3] if f[3] is not None else 0), reverse=True)
+            podadas.extend(grupo[:max_edges_per_node])
+        filas_aristas = podadas
 
     # Paleta de colores por institución emisora (Mejora #2)
     COLORES_ISSUER = {
@@ -542,6 +573,7 @@ async def get_graph_data(
             "label": "",
             "relation": relation,
             "peso_hub": round(peso, 3),
+            "score": round(float(score), 3) if score is not None else 0.0,
             "arrows": "to",
             "width": ancho,
             "color": {
