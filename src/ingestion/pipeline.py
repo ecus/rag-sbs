@@ -14,7 +14,7 @@ from uuid import UUID
 
 from psycopg_pool import AsyncConnectionPool
 
-from src.ingestion.differ import classify_change, hash_bytes, has_changed
+from src.ingestion.differ import classify_change, hash_bytes, hash_text, has_changed
 from src.ingestion.downloader import Downloader
 from src.ingestion.repository import IngestionRepository
 from src.llm import LLMProvider
@@ -116,27 +116,16 @@ async def process_source(
             )
         return SourceResult(source_name=nombre, status="unchanged")
 
-    # res.status == "changed"
+    # res.status == "changed" a nivel HTTP/bytes. Pero para decidir si el
+    # CONTENIDO cambió de verdad hasheamos el TEXTO extraído, no los bytes crudos
+    # (ver differ.hash_text): los PDFs SBS/BCRP se regeneran con timestamps, así
+    # que los bytes cambian en cada descarga aunque el texto sea idéntico. Por eso
+    # parseamos primero y recién después evaluamos el cambio real.
     assert res.content is not None
-    hash_nuevo = hash_bytes(res.content)
     hash_anterior = source.get("last_hash")
     es_nuevo = hash_anterior is None
-    if not has_changed(hash_anterior, hash_nuevo):
-        # Hash idéntico al indexado → unchanged (force solo bypassea cache HTTP,
-        # no la igualdad de hash; si hash coincide, no hay cambio real).
-        async with pool.connection() as conn:
-            repo = IngestionRepository(conn)
-            await repo.update_check_state(
-                source_id=source_id,
-                etag=res.etag,
-                last_modified=res.last_modified,
-                content_hash=hash_nuevo,
-                status="unchanged",
-                changed=False,
-            )
-        return SourceResult(source_name=nombre, status="unchanged")
 
-    # 3. Parse
+    # 3. Parse (necesario para hashear el texto)
     try:
         texto = _parsear_bytes_a_texto(res.content, content_type=res.content_type)
     except Exception as exc:  # noqa: BLE001
@@ -146,7 +135,7 @@ async def process_source(
                 source_id=source_id,
                 etag=res.etag,
                 last_modified=res.last_modified,
-                content_hash=hash_nuevo,
+                content_hash=hash_bytes(res.content),
                 status="error",
                 changed=False,
             )
@@ -163,6 +152,22 @@ async def process_source(
         return SourceResult(
             source_name=nombre, status="error", error="texto extraído vacío"
         )
+
+    # Hash sobre el texto normalizado → decisión real de cambio.
+    hash_nuevo = hash_text(texto)
+    if not has_changed(hash_anterior, hash_nuevo):
+        # Texto idéntico al ya indexado → NO crear versión nueva (evita el bloat).
+        async with pool.connection() as conn:
+            repo = IngestionRepository(conn)
+            await repo.update_check_state(
+                source_id=source_id,
+                etag=res.etag,
+                last_modified=res.last_modified,
+                content_hash=hash_nuevo,
+                status="unchanged",
+                changed=False,
+            )
+        return SourceResult(source_name=nombre, status="unchanged")
 
     # 4. Classify
     titulo = source.get("metadata", {}).get("title") or nombre

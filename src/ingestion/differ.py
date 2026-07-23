@@ -31,6 +31,18 @@ def hash_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def hash_text(texto: str) -> str:
+    """SHA-256 sobre el TEXTO normalizado (colapsa espacios en blanco + strip).
+
+    Se usa como content_hash en vez del hash de bytes crudos: los PDFs de SBS/BCRP
+    se regeneran con timestamps embebidos, así que los bytes cambian en cada
+    descarga aunque el texto regulatorio sea idéntico. Hashear el texto normalizado
+    evita crear una versión nueva en cada scrape (bloat de duplicados).
+    """
+    normalizado = re.sub(r"\s+", " ", texto or "").strip()
+    return hashlib.sha256(normalizado.encode("utf-8")).hexdigest()
+
+
 def has_changed(prev_hash: str | None, new_hash: str) -> bool:
     """True si el contenido es distinto del último indexado."""
     return prev_hash != new_hash
