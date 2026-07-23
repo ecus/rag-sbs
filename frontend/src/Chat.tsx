@@ -859,7 +859,7 @@ export default function Chat({ user, adminToken, onExit, onTimeout }: { user: Us
         <div className="sb-foot">
           <div className="k">Cobertura</div>
           <div className="v">
-            2,870 <small>documentos</small>
+            855 <small>documentos</small>
           </div>
           <div className="sb-user">
             <b>{user.name}</b>
