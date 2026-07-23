@@ -82,48 +82,6 @@ services:
         max-file: "3"
 
   # ---------------------------------------------------------------------
-  # UI: Streamlit
-  # ---------------------------------------------------------------------
-  ui:
-    image: ghcr.io/${GH_OWNER:-yourname}/rag-sbs-ui:${RAG_SBS_TAG:-latest}
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: runtime
-    container_name: rag-sbs-ui
-    restart: unless-stopped
-    mem_limit: 400m
-    mem_reservation: 200m
-    ports:
-      - "127.0.0.1:8501:8501"
-    environment:
-      API_URL: http://api:8000
-      API_URL_PUBLIC: ${API_URL_PUBLIC:-http://localhost:8000}
-      API_PUBLIC_PORT: ${API_PUBLIC_PORT:-8000}
-      LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
-      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
-      ADMIN_API_KEY: ${ADMIN_API_KEY}
-      ADMIN_EMAIL: ${ADMIN_EMAIL:-eurrutia489@gmail.com}
-      SESSION_TIMEOUT_MIN: ${SESSION_TIMEOUT_MIN:-20}
-      PYTHONPATH: /app
-    command:
-      - streamlit
-      - run
-      - src/ui/streamlit_app.py
-      - --server.port=8501
-      - --server.address=0.0.0.0
-      - --server.headless=true
-      - --browser.gatherUsageStats=false
-    depends_on:
-      api:
-        condition: service_healthy
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  # ---------------------------------------------------------------------
   # Postgres con pgvector
   # ---------------------------------------------------------------------
   postgres:
@@ -188,12 +146,12 @@ services:
     environment:
       DOMAIN: ${DOMAIN:-_}
     volumes:
-      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./deploy/Caddyfile.react:/etc/caddy/Caddyfile:ro
+      - ./frontend/dist:/srv/app:ro
       - caddy-data:/data
       - caddy-config:/config
     depends_on:
       - api
-      - ui
 
 volumes:
   pg-data:

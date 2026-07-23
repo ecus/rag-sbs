@@ -44,14 +44,10 @@
         reverse_proxy api:8000
     }
 
-    # --- Panel de administración: Streamlit bajo /admin ---
-    # Requiere que Streamlit corra con --server.baseUrlPath=admin
-    handle /admin* {
-        reverse_proxy ui:8501 {
-            header_up Host {host}
-            header_up X-Real-IP {remote}
-        }
-    }
+    # --- /admin retirado: el admin ahora vive dentro del SPA React (tab Admin,
+    #     visible con token de administrador). Redirigimos por si quedan enlaces viejos.
+    redir /admin / 302
+    redir /admin/* / 302
 
     # --- Assets con hash: cache largo e inmutable (el nombre cambia en cada build) ---
     handle_path /assets/* {
